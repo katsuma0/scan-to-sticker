@@ -88,10 +88,10 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
       </select></div>
     <div><label class="k">Dots</label>
       <select id="dots">
-        <option value="5">fine</option>
-        <option value="7" selected>comic</option>
-        <option value="11">big</option>
-        <option value="0">none</option>
+        <option value="0" selected>smooth</option>
+        <option value="4">fine dots</option>
+        <option value="7">comic dots</option>
+        <option value="11">big dots</option>
       </select></div>
   </div>
 
@@ -416,15 +416,18 @@ function rampFor(pal){
 // pixel gets, so a two-colour palette still shows shading the way old comics did.
 function toPalette(src,ramp,cell){
   const W=src.width,H=src.height,img=cx(src).getImageData(0,0,W,H),d=img.data;
-  let L=lumOf(d);
-  const Lb=boxBlur(L,W,H,Math.max(2,Math.round(Math.min(W,H)/120)));
-  for(let i=0;i<L.length;i++)L[i]=L[i]+0.9*(L[i]-Lb[i]); // unsharp, so type and outlines hold up
+  // Smooth out JPEG noise from the tiny source first, then sharpen only gently,
+  // so edges hold up without the speckle a hard sharpen pulls out of the noise.
+  let L=boxBlur(lumOf(d),W,H,Math.max(1,Math.round(Math.min(W,H)/300)));
+  const Lb=boxBlur(L,W,H,Math.max(3,Math.round(Math.min(W,H)/60)));
+  for(let i=0;i<L.length;i++)L[i]=L[i]+0.35*(L[i]-Lb[i]);
   levels(L,percentile(L,0.015),percentile(L,0.985));
   const C=ramp.map(hex),K=C.length,co=Math.cos(0.5236),si=Math.sin(0.5236);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
     const o=y*W+x,v=clamp(L[o]),s=v*(K-1),i=Math.min(K-2,Math.floor(s)),f=s-i;
-    let t=0.5;
-    if(cell){const u=(x*co+y*si)/cell,w=(-x*si+y*co)/cell,du=u-Math.floor(u)-0.5,dw=w-Math.floor(w)-0.5;t=clamp((du*du+dw*dw)*2);}
+    if(!cell){ // smooth: blend between the two nearest palette colours, no dots
+      const a=C[i],b=C[i+1];for(let k=0;k<3;k++)d[o*4+k]=a[k]+(b[k]-a[k])*f;d[o*4+3]=255;continue;}
+    const u=(x*co+y*si)/cell,w=(-x*si+y*co)/cell,du=u-Math.floor(u)-0.5,dw=w-Math.floor(w)-0.5,t=clamp((du*du+dw*dw)*2);
     const c=C[f>t?i+1:i];d[o*4]=c[0];d[o*4+1]=c[1];d[o*4+2]=c[2];d[o*4+3]=255;
   }
   const out=cv(W,H);cx(out).putImageData(img,0,0);return out;

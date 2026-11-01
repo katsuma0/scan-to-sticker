@@ -4,7 +4,7 @@ I photographed 45 pages of an old insect book and wanted stickers out of them wi
 
 Open `index.html` in a browser and drop the photos on it. Nothing uploads anywhere.
 
-Each sheet uses one palette: green beige black brown, or black and white. The picture gets mapped onto those colours dark to light, with a halftone screen between them, so two colours can still show shading. Some stamps use three of the four colours so the sheet doesn't look like one filter.
+Each sheet uses one palette: green beige black brown, or black and white. The picture gets mapped onto those colours dark to light as a smooth blend. Halftone dots are an option if you want the old comic look. Some stamps use three of the four colours so the sheet doesn't look like one filter.
 
 A stamp is about 3 cm tall, mostly portrait with some square and landscape ones, and each row is stretched to the sheet width. Every stamp is a picture. Its width follows the picture's shape so the whole thing fits, photos cropped just inside their own edges and drawings framed with a bit of page, sometimes with the caption. No text-only stamps. Gutters are 3 mm, enough for a cutter. Click a stamp to swap its picture.
 
