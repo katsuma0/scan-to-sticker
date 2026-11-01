@@ -37,6 +37,14 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
 #sheet{display:block;width:100%;height:auto;cursor:pointer;border-radius:4px;
   background:repeating-conic-gradient(#e2ddd2 0 25%,#f4f1ea 0 50%) 0 0/18px 18px;box-shadow:0 1px 2px rgba(0,0,0,.08),0 8px 28px rgba(0,0,0,.12)}
 #empty{padding:80px 20px;text-align:center;color:var(--muted)}
+#editor{position:fixed;inset:0;background:#1d1c1afa;display:flex;flex-direction:column;z-index:10;color:#f4f1ea}
+#editor[hidden]{display:none}
+#editor header{display:flex;gap:8px;align-items:center;padding:10px 16px;flex-wrap:wrap}
+#editor header .grow{flex:1;min-width:120px;font-size:13px;color:#cfc8ba}
+#editor button{background:#f4f1ea;color:#1d1c1a;border-color:#f4f1ea}
+#editor button.ghost{background:transparent;color:#f4f1ea}
+#edWrap{flex:1;display:flex;justify-content:center;align-items:center;padding:0 16px 16px;min-height:0}
+#edCanvas{max-width:100%;max-height:100%;cursor:crosshair;touch-action:none}
 @media (max-width:760px){
   body{grid-template-columns:1fr}
   aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
@@ -92,6 +100,7 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
     <label><input type="checkbox" id="randPal"> new palette each sheet</label>
   </div>
 
+  <button class="ghost" id="editPics" disabled>Check pictures</button>
   <button id="regen" disabled>New sheet</button>
   <div class="hint">Click a sticker to swap in a different picture.</div>
 
@@ -103,6 +112,17 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
 
   <div id="status"></div>
 </aside>
+
+<div id="editor" hidden>
+  <header>
+    <button class="ghost" id="edPrev">←</button>
+    <button class="ghost" id="edNext">→</button>
+    <span class="grow" id="edInfo"></span>
+    <button class="ghost" id="edClear">Clear page</button>
+    <button id="edDone">Done</button>
+  </header>
+  <div id="edWrap"><canvas id="edCanvas"></canvas></div>
+</div>
 
 <main>
   <div id="wrap">
@@ -232,22 +252,34 @@ function analyze(img0,name){
   // no flood inward: dark photos share the desk's hue and the fill leaks into them
   // Desk colour alone misses shadows under the book, so also treat everything outside the
   // bounding box of the paper-white pixels as desk. Pages here sit roughly square to the camera.
-  const hiL=percentile(L,0.92),colC=new Float32Array(aw),rowC=new Float32Array(ah);
-  for(let i=0;i<N;i++)if(S[i]<0.2&&L[i]>hiL*0.8){colC[i%aw]++;rowC[(i/aw)|0]++;}
-  const span=(arr)=>{const mx=Math.max(...arr),th=mx*0.15;let a=0,b=arr.length-1;while(a<b&&arr[a]<th)a++;while(b>a&&arr[b]<th)b--;return [a,b]};
-  const [bx0,bx1]=span(colC),[by0,by1]=span(rowC);
+  // Count pixels that don't look like desk, so a dark full-page photo still counts as book.
+  const colC=new Float32Array(aw),rowC=new Float32Array(ah);
+  for(let i=0;i<N;i++)if(!near(i)){colC[i%aw]++;rowC[(i/aw)|0]++;}
+  const span=(arr)=>{const mx=Math.max(...arr),th=mx*0.35;let a=0,b=arr.length-1;while(a<b&&arr[a]<th)a++;while(b>a&&arr[b]<th)b--;return [a,b]};
+  let [bx0,bx1]=span(colC),[by0,by1]=span(rowC);
+  // The shadow under the book is darker than the desk but the same hue. Walk in from each edge
+  // while a row or column is still mostly desk-hued at any brightness.
+  const hueDesk=i=>{const r=d[i*4],gg=d[i*4+1],b=d[i*4+2],t=r+gg+b+1,rs=r/t,gs=gg/t;return t>120&&Math.abs(gs-mg)<0.02&&rs>mr-0.03&&rs<mr+0.07};
+  const rowDesk=y=>{let c=0;for(let x=bx0;x<=bx1;x++)c+=hueDesk(y*aw+x);return c/(bx1-bx0+1)>0.6};
+  const colDesk=x=>{let c=0;for(let y=by0;y<=by1;y++)c+=hueDesk(y*aw+x);return c/(by1-by0+1)>0.6};
+  while(by1>by0&&rowDesk(by1))by1--;while(by0<by1&&rowDesk(by0))by0++;
+  while(bx1>bx0&&colDesk(bx1))bx1--;while(bx0<bx1&&colDesk(bx0))bx0++;
   for(let i=0;i<N;i++){const x=i%aw,y=(i/aw)|0;if(x<bx0||x>bx1||y<by0||y>by1)desk0[i]=1;}
   const deskB=boxBlur(desk0,aw,ah,7);
 
   const Lb=boxBlur(L,aw,ah,2),L2=new Float32Array(N);for(let i=0;i<N;i++)L2[i]=L[i]*L[i];
   const L2b=boxBlur(L2,aw,ah,2),Sb=boxBlur(S,aw,ah,2);
+  // judge paper vs picture over a wider window so dense body text reads as grey paper, not as a photo
+  const Lw=boxBlur(L,aw,ah,5),Sw=boxBlur(S,aw,ah,5);
   const pageWhite=percentile(Lb.filter((_,i)=>!desk0[i]),0.9)||0.85;
+  // old paper photographed under warm light is not grey, so measure its own saturation
+  const paperS=percentile(Sb.filter((_,i)=>!desk0[i]&&Lb[i]>pageWhite*0.9),0.5)||0.1;
 
   const desk=new Float32Array(N),fig=new Float32Array(N),text=new Float32Array(N),white=new Float32Array(N);
   for(let i=0;i<N;i++){
     if(deskB[i]>0.02){desk[i]=1;continue}
     const sd=Math.sqrt(Math.max(0,L2b[i]-Lb[i]*Lb[i])),rel=Lb[i]/pageWhite;
-    const paperish=Sb[i]<0.2&&rel>0.72;
+    const paperish=(Sb[i]<paperS+0.1&&rel>0.72)||(Sw[i]<paperS+0.07&&Lw[i]/pageWhite>0.6);
     if(paperish){ if(sd<0.03&&rel>0.9) white[i]=1; else text[i]=1; }
     else fig[i]=1;
   }
@@ -257,7 +289,8 @@ function analyze(img0,name){
     text:integral(boxBlur(text,aw,ah,3),aw,ah),white:integral(white,aw,ah),
     lum:integral(L,aw,ah),lum2:integral(L2,aw,ah),
     maps:{desk,fig,text,white}};
-  p.box={x0:bx0,y0:by0,x1:bx1,y1:by1};p.figs=findFigures(fig,desk,aw,ah);
+  p.box={x0:bx0,y0:by0,x1:bx1,y1:by1};const detail=new Float32Array(N);for(let i=0;i<N;i++)detail[i]=Math.abs(L[i]-Lb[i]);
+  p.figs=findFigures(fig,desk,aw,ah,{text,L,S,detail,box:p.box});
   p.figShare=rectMean(p.fig,aw,0,0,aw,ah);p.textShare=rectMean(p.text,aw,0,0,aw,ah);
   return p;
 }
@@ -301,7 +334,7 @@ function crop(r,W,H){
 
 // Whole pictures, not fragments: connected blobs of "figure" pixels become candidate panels,
 // so a panel can show the entire insect plus the text and white space around it.
-function findFigures(fig,desk,aw,ah){
+function findFigures(fig,desk,aw,ah,ctx){
   const N=aw*ah,b=boxBlur(fig,aw,ah,2),m=new Uint8Array(N);
   for(let i=0;i<N;i++)m[i]=b[i]>0.45&&!desk[i]?1:0;
   const lab=new Int32Array(N),q=new Int32Array(N),out=[];let id=0;
@@ -315,39 +348,60 @@ function findFigures(fig,desk,aw,ah){
       if(y>0&&m[i-aw]&&!lab[i-aw]){lab[i-aw]=id;q[qt++]=i-aw}
       if(y<ah-1&&m[i+aw]&&!lab[i+aw]){lab[i+aw]=id;q[qt++]=i+aw}}
     const w=x1-x0+1,h=y1-y0+1;
-    if(n>N*0.006&&w>14&&h>14&&n/(w*h)>0.2)out.push({x:x0,y:y0,w,h,n});
+    if(n>N*0.006&&w>14&&h>14&&n/(w*h)>0.2&&makesSense(x0,y0,w,h,aw,ctx))out.push({x:x0,y:y0,w,h,n});
   }
   return out;
+}
+
+// Drop blobs that would make a confusing sticker: dense body text the classifier read as a picture,
+// thin strips along the gutter or page edge, flat low-contrast patches, and whole-page blobs that
+// would only ever show as a zoomed-in fragment.
+function makesSense(x0,y0,w,h,aw,{text,L,S,detail,box}){
+  const a=w/h;if(a<0.4||a>2.6)return false;
+  const B=(box.x1-box.x0)*(box.y1-box.y0);if(w*h<B*0.015)return false;
+  let t=0,m=0,m2=0,sat=0,n=0,det=0;
+  for(let y=y0;y<y0+h;y+=2)for(let x=x0;x<x0+w;x+=2){const i=y*aw+x;t+=text[i];det+=detail[i];m+=L[i];m2+=L[i]*L[i];sat+=S[i];n++;}
+  t/=n;m/=n;sat/=n;const sd=Math.sqrt(Math.max(0,m2/n-m*m));
+  if(t>0.3)return false;          // mostly type
+  if(det/n<0.022)return false;    // smooth gradient, like the shadow under the book
+  if(sd<0.12)return false;        // flat, nothing to see
+  if(m<0.2&&sat<0.15)return false; // dark mush
+  return true;
 }
 
 // ---------- panel sources ----------
 let usedFigs=new Set(),usedPages=new Set();
 function figRect(p,f,aspect){
-  // Inset well inside the photo: rotation fixes tilt but not the keystone from shooting at an angle.
-  if(f.n/(f.w*f.h)>0.7&&chance(0.85)){
-    const bw=f.w*0.84,bh=f.h*0.84;let w=bw,h=bw/aspect;if(h>bh){h=bh;w=bh*aspect}
+  // Rectangular photos: crop just inside their own edge so the whole photo shows with straight sides.
+  // The stamp was sized to the photo's shape, so this loses almost nothing.
+  if(f.n/(f.w*f.h)>0.7){
+    const bw=f.w*0.95,bh=f.h*0.95;let w=bw,h=bw/aspect;if(h>bh){h=bh;w=bh*aspect}
     return {page:p,x:(f.x+f.w/2-w/2)/p.k,y:(f.y+f.h/2-h/2)/p.k,w:w/p.k,h:h/p.k,fig:f};
   }
   // Frame the whole figure, sometimes with extra room so captions and margin come along.
-  const pad=chance(0.4)?rand(1.3,1.6):rand(1.06,1.2);
+  const pad=chance(0.45)?rand(1.3,1.55):rand(1.06,1.2);
   let w=f.w*pad,h=f.h*pad;
   if(w/h<aspect)w=h*aspect;else h=w/aspect;
   const B=p.box,PW=B.x1-B.x0,PH=B.y1-B.y0,s=Math.min(1,PW/w,PH/h);w*=s;h*=s;
   const x=clamp(f.x+f.w/2-w/2,B.x0,B.x1-w),y=clamp(f.y+f.h/2-h/2,B.y0,B.y1-h);
   return {page:p,x:x/p.k,y:y/p.k,w:w/p.k,h:h/p.k,fig:f};
 }
-function sourceFor(aspect){
-  if(chance(0.14)){const r=pickRegion('text',aspect,[0.35,0.7]);if(r){usedPages.add(r.page);return r;}}
+function pickFig(aspect){
   const all=[];for(const p of pages)for(const f of p.figs)all.push([p,f]);
-  if(!all.length)return pickRegion('mixed',aspect)||pickRegion('text',aspect);
+  if(!all.length)return null;
   let pool=all.filter(([p,f])=>!usedFigs.has(f)&&!usedPages.has(p));
   if(!pool.length)pool=all.filter(([,f])=>!usedFigs.has(f));
   if(!pool.length){usedFigs.clear();pool=all}
   // a figure whose shape is close to the panel's keeps more of itself in frame
   let best=null,bs=-1;
-  for(let t=0;t<6;t++){const c=pick(pool),fa=c[1].w/c[1].h,score=Math.min(fa,aspect)/Math.max(fa,aspect)+rand(0,0.5);if(score>bs){bs=score;best=c}}
+  for(let t=0;t<6;t++){const c=pick(pool),fa=c[1].w/c[1].h,score=aspect?Math.min(fa,aspect)/Math.max(fa,aspect)+rand(0,0.5):rng();if(score>bs){bs=score;best=c}}
   usedFigs.add(best[1]);usedPages.add(best[0]);
-  return figRect(best[0],best[1],aspect);
+  return best;
+}
+function sourceFor(aspect,fig){
+  const pf=fig||pickFig(aspect);
+  if(!pf)return pickRegion('mixed',aspect)||pickRegion('text',aspect);
+  return figRect(pf[0],pf[1],aspect);
 }
 
 // ---------- palette mapping ----------
@@ -377,6 +431,8 @@ function toPalette(src,ramp,cell){
 }
 
 // ---------- stamp layout ----------
+// paper margin round the picture, like the white edge of a stamp, but cut straight
+const MARGIN=0.07*DPI;
 // Rows of stamp-sized stickers, mostly portrait with some landscape, each row stretched to the
 // full sheet width like a stamp album page. Gutters are wide enough for a cutter.
 const STAMP_ROW={small:0.95,mid:1.2,large:1.55}; // row height in inches
@@ -385,26 +441,26 @@ function stampLayout(W,H,size){
   const target=STAMP_ROW[size]*DPI,rows=Math.max(1,Math.round((ih+gut)/(target+gut))),h=(ih-gut*(rows-1))/rows;
   const panels=[];
   for(let r=0;r<rows;r++){
-    const ws=[];let sum=-gut;
+    // each stamp takes the shape of its picture, so the whole picture fits
+    const ws=[],figs=[];let sum=-gut;
     while(true){
-      const a=chance(0.55)?rand(0.74,0.84):chance(0.35)?rand(0.95,1.05):rand(1.3,1.6);
-      const w=h*a;
-      if(ws.length&&sum+gut+w>iw){if(iw-sum<w*0.5||ws.length>=2)break;}
-      ws.push(w);sum+=gut+w;if(sum>=iw)break;
+      const pf=pickFig();
+      const a=pf?clamp(pf[1].w/pf[1].h*(pf[1].n/(pf[1].w*pf[1].h)>0.7?1:1.1),0.62,1.75):rand(0.74,1.3);
+      const w=(h-2*MARGIN)*a+2*MARGIN;
+      if(ws.length&&sum+gut+w>iw&&iw-sum<w*0.5){if(pf){usedFigs.delete(pf[1]);usedPages.delete(pf[0]);}break;}
+      ws.push(w);figs.push(pf);sum+=gut+w;if(sum>=iw)break;
     }
     const k=(iw-gut*(ws.length-1))/ws.reduce((a,b)=>a+b,0);
-    let x=m;for(const w of ws){panels.push({x,y:m+r*(h+gut),w:w*k,h});x+=w*k+gut;}
+    let x=m;ws.forEach((w,i)=>{panels.push({x,y:m+r*(h+gut),w:w*k,h,fig:figs[i]});x+=w*k+gut;});
   }
   return panels;
 }
 
 // ---------- sheet ----------
 let sheet=null;
-// paper margin round the picture, like the white edge of a stamp, but cut straight
-const MARGIN=0.07*DPI;
 function renderPanel(pn){
   const W=Math.round(pn.w-2*MARGIN),H=Math.round(pn.h-2*MARGIN);
-  pn.src=sourceFor(W/H);pn.ramp=rampFor(sheet.pal);
+  pn.src=sourceFor(W/H,pn.fig);pn.fig=null;pn.ramp=rampFor(sheet.pal);
   pn.canvas=pn.src?toPalette(crop(pn.src,W,H),pn.ramp,+$('#dots').value):null;
 }
 
@@ -457,10 +513,10 @@ async function loadFiles(files){
   for(let i=0;i<list.length;i++){
     setStatus(`reading page ${i+1} of ${list.length}…`);await tick();
     try{const img=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=URL.createObjectURL(list[i])});
-      pages.push(analyze(img,list[i].name));}
+      const pg=analyze(img,list[i].name);loadBoxes(pg);pages.push(pg);}
     catch(e){console.warn('skip',list[i].name,e)}
   }
-  $('#regen').disabled=!pages.length;
+  $('#regen').disabled=!pages.length;$('#editPics').disabled=!pages.length;updatePicCount();
   await generate();
   const small=pages.filter(p=>Math.max(p.w,p.h)<1500).length;
   if(small)setStatus($('#status').textContent+` ${small} scans are under 1500 px, so small type will blur. Full size photos fix it.`);
@@ -497,6 +553,46 @@ window.__debugMaps=()=>{
     for(const f of p.figs)g.strokeRect(ox+f.x*s,oy+f.y*s,f.w*s,f.h*s);});
   return c.toDataURL('image/jpeg',0.8);
 };
+// ---------- picture editor ----------
+// The finder gets most pictures but not all, and some of what it finds is nonsense.
+// One pass through the pages here fixes it: click a box to drop it, drag to draw a new one.
+// Boxes are remembered per photo in this browser.
+const boxKey=p=>`sts:${p.name}:${p.w}x${p.h}`;
+function loadBoxes(p){try{const v=localStorage.getItem(boxKey(p));if(v)p.figs=JSON.parse(v);}catch(e){}}
+function saveBoxes(p){try{localStorage.setItem(boxKey(p),JSON.stringify(p.figs));}catch(e){}}
+function updatePicCount(){const n=pages.reduce((a,p)=>a+p.figs.length,0);$('#editPics').textContent=`Check pictures (${n})`;}
+let ed={i:0,drag:null};
+function edDraw(){
+  const p=pages[ed.i],c=$('#edCanvas'),g=c.getContext('2d');
+  c.width=p.w;c.height=p.h;g.drawImage(p.full,0,0);
+  g.fillStyle='rgba(0,0,0,.35)';g.fillRect(0,0,p.w,p.h);
+  const lw=Math.max(2,p.w/250);
+  for(const f of p.figs){const x=f.x/p.k,y=f.y/p.k,w=f.w/p.k,h=f.h/p.k;
+    g.drawImage(p.full,x,y,w,h,x,y,w,h);g.strokeStyle='#ffd400';g.lineWidth=lw;g.strokeRect(x,y,w,h);}
+  if(ed.drag){const d=ed.drag;g.strokeStyle='#7fe0ff';g.lineWidth=lw;g.strokeRect(Math.min(d.x0,d.x1),Math.min(d.y0,d.y1),Math.abs(d.x1-d.x0),Math.abs(d.y1-d.y0));}
+  $('#edInfo').textContent=`Page ${ed.i+1} of ${pages.length}, ${p.figs.length} picture${p.figs.length===1?'':'s'}. Click a box to drop it. Drag to add one.`;
+}
+function edPt(e){const c=$('#edCanvas'),r=c.getBoundingClientRect();return [(e.clientX-r.left)/r.width*c.width,(e.clientY-r.top)/r.height*c.height]}
+$('#edCanvas').addEventListener('pointerdown',e=>{const [x,y]=edPt(e);ed.drag={x0:x,y0:y,x1:x,y1:y};e.target.setPointerCapture(e.pointerId)});
+$('#edCanvas').addEventListener('pointermove',e=>{if(!ed.drag)return;const [x,y]=edPt(e);ed.drag.x1=x;ed.drag.y1=y;edDraw()});
+$('#edCanvas').addEventListener('pointerup',e=>{
+  const d=ed.drag;ed.drag=null;if(!d)return;const p=pages[ed.i];
+  const w=Math.abs(d.x1-d.x0),h=Math.abs(d.y1-d.y0);
+  if(w<p.w/60&&h<p.w/60){ // a click: drop the smallest box under it
+    const hits=p.figs.filter(f=>d.x0>=f.x/p.k&&d.x0<=(f.x+f.w)/p.k&&d.y0>=f.y/p.k&&d.y0<=(f.y+f.h)/p.k).sort((a,b)=>a.w*a.h-b.w*b.h);
+    if(hits.length)p.figs.splice(p.figs.indexOf(hits[0]),1);
+  }else if(w>p.w/40&&h>p.w/40){
+    // drawn boxes are taken as tight around the picture, so they crop like a photo
+    const f={x:Math.min(d.x0,d.x1)*p.k,y:Math.min(d.y0,d.y1)*p.k,w:w*p.k,h:h*p.k};f.n=f.w*f.h*0.9;f.manual=true;p.figs.push(f);
+  }
+  saveBoxes(p);edDraw();
+});
+function edGo(n){ed.i=(ed.i+n+pages.length)%pages.length;edDraw()}
+$('#editPics').onclick=()=>{$('#editor').hidden=false;edDraw()};
+$('#edPrev').onclick=()=>edGo(-1);$('#edNext').onclick=()=>edGo(1);
+$('#edClear').onclick=()=>{const p=pages[ed.i];p.figs=[];saveBoxes(p);edDraw()};
+$('#edDone').onclick=()=>{$('#editor').hidden=true;updatePicCount();generate()};
+document.addEventListener('keydown',e=>{if($('#editor').hidden)return;if(e.key==='ArrowRight')edGo(1);if(e.key==='ArrowLeft')edGo(-1);if(e.key==='Escape')$('#edDone').click()});
 </script>
 </body>
 </html>
