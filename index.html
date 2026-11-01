@@ -46,7 +46,7 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
 </head>
 <body>
 <aside>
-  <h1>scan to sticker<small>Book scans in, comic page of stickers out.</small></h1>
+  <h1>scan to sticker<small>Book scans in, a sheet of stamp stickers out.</small></h1>
 
   <div>
     <label class="k">Scans</label>
@@ -72,11 +72,11 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
   </div>
 
   <div class="row">
-    <div><label class="k">Panels</label>
-      <select id="density">
-        <option value="few">fewer, bigger</option>
+    <div><label class="k">Stamp size</label>
+      <select id="stampSize">
+        <option value="small">small</option>
         <option value="mid" selected>normal</option>
-        <option value="many">more, smaller</option>
+        <option value="large">large</option>
       </select></div>
     <div><label class="k">Dots</label>
       <select id="dots">
@@ -88,19 +88,18 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
   </div>
 
   <div class="checks">
-    <label><input type="checkbox" id="keyline" checked> panel lines</label>
     <label><input type="checkbox" id="cutlines"> cut lines</label>
     <label><input type="checkbox" id="randPal"> new palette each sheet</label>
   </div>
 
   <button id="regen" disabled>New sheet</button>
-  <div class="hint">Click a panel to swap in a different picture.</div>
+  <div class="hint">Click a sticker to swap in a different picture.</div>
 
   <div class="row">
     <button class="ghost" id="dlSheet" disabled>Sticker PNG</button>
     <button class="ghost" id="dlCut" disabled>Cut lines PNG</button>
   </div>
-  <div class="hint">Sticker PNG has a transparent background at 300 dpi. Cut lines PNG is the panel outlines only, for a cutter that wants a separate cut layer.</div>
+  <div class="hint">Sticker PNG has a transparent background at 300 dpi. Cut lines PNG is the sticker outlines only, for a cutter that wants a separate cut layer.</div>
 
   <div id="status"></div>
 </aside>
@@ -120,14 +119,8 @@ const CM = DPI/2.54;
 
 // Colours in any order; they get sorted dark to light when mapped onto an image.
 const PALETTES = {
-  bw:        {name:'black, white',                    c:['#141414','#f5f2ea']},
-  brkw:      {name:'blue, red, black, white',         c:['#141414','#1f3c8f','#cf2534','#f4efe3']},
   forest:    {name:'green, beige, black, brown',      c:['#151412','#5a3b26','#56703c','#e9dcc0']},
-  indigo:    {name:'indigo, vermilion, cream',        c:['#1a1b29','#26386f','#d0402e','#f2ead8']},
-  sepia:     {name:'sepia',                           c:['#25190f','#74512f','#c7a477','#f2e7d3']},
-  riso:      {name:'teal, pink, black, paper',        c:['#1e1e1e','#0d7c85','#ff5a8f','#f6f1e6']},
-  mustard:   {name:'pine, mustard, black, cream',     c:['#171717','#2c5a4c','#d9a521','#f3ecdc']},
-  navy:      {name:'navy, white',                     c:['#18264f','#f4f1ea']},
+  bw:        {name:'black, white',                    c:['#141414','#f5f2ea']},
 };
 
 const SHEETS = {'14x21':[14/2.54,21/2.54], a5:[14.8/2.54,21/2.54], '4x6':[4,6], letter:[8.5,11]};
@@ -187,9 +180,35 @@ function levels(L,lo,hi){for(let i=0;i<L.length;i++)L[i]=clamp((L[i]-lo)/Math.ma
 // so panels can ask for a whole picture or a block of text instead of landing on the tabletop.
 const pages = [];
 
-function analyze(img,name){
-  const w=img.naturalWidth,h=img.naturalHeight;
-  const full=cv(w,h);full.getContext('2d').drawImage(img,0,0);
+// Phone photos of a book come in a few degrees off square. Find the angle that makes the text
+// lines most horizontal (sharpest row histogram of dark pixels) and rotate the page by it,
+// so photo edges inside the stickers come out straight.
+function estimateSkew(img){
+  const w=img.naturalWidth,h=img.naturalHeight,k=Math.min(1,500/Math.max(w,h)),aw=Math.round(w*k),ah=Math.round(h*k);
+  const c=cv(aw,ah),g=cx(c);g.drawImage(img,0,0,aw,ah);
+  const L=lumOf(g.getImageData(0,0,aw,ah).data),Lb=boxBlur(L,aw,ah,6),pts=[];
+  for(let y=0;y<ah;y++)for(let x=0;x<aw;x++){const i=y*aw+x;if(Lb[i]>0.45&&L[i]<Lb[i]-0.1)pts.push(x,y);}
+  if(pts.length<200)return 0;
+  let best=0,bs=-1;
+  for(let a=-8;a<=8.01;a+=0.25){
+    const r=a*Math.PI/180,co=Math.cos(r),si=Math.sin(r),off=aw,hist=new Float32Array(ah+2*aw);
+    for(let i=0;i<pts.length;i+=2){const yy=Math.round(-pts[i]*si+pts[i+1]*co)+off;if(yy>=0&&yy<hist.length)hist[yy]++;}
+    let sc=0;for(let i=0;i<hist.length;i++)sc+=hist[i]*hist[i];
+    if(sc>bs){bs=sc;best=a}
+  }
+  return best;
+}
+function deskew(img){
+  const a=estimateSkew(img),w=img.naturalWidth,h=img.naturalHeight,c=cv(w,h),g=c.getContext('2d');
+  if(Math.abs(a)<0.2){g.drawImage(img,0,0);return c}
+  const t=cv(1,1),tg=t.getContext('2d');tg.drawImage(img,0,0,1,1,0,0,1,1); // corner colour fills the rotated-in edges
+  const d=tg.getImageData(0,0,1,1).data;g.fillStyle=`rgb(${d[0]},${d[1]},${d[2]})`;g.fillRect(0,0,w,h);
+  g.translate(w/2,h/2);g.rotate(-a*Math.PI/180);g.imageSmoothingQuality='high';g.drawImage(img,-w/2,-h/2);
+  return c;
+}
+function analyze(img0,name){
+  const img=deskew(img0),w=img.width,h=img.height;
+  const full=img;
   const k=Math.min(1,420/Math.max(w,h)),aw=Math.round(w*k),ah=Math.round(h*k),N=aw*ah;
   const a=cv(aw,ah),g=cx(a);g.drawImage(img,0,0,aw,ah);
   const d=g.getImageData(0,0,aw,ah).data;
@@ -304,6 +323,11 @@ function findFigures(fig,desk,aw,ah){
 // ---------- panel sources ----------
 let usedFigs=new Set(),usedPages=new Set();
 function figRect(p,f,aspect){
+  // Inset well inside the photo: rotation fixes tilt but not the keystone from shooting at an angle.
+  if(f.n/(f.w*f.h)>0.7&&chance(0.85)){
+    const bw=f.w*0.84,bh=f.h*0.84;let w=bw,h=bw/aspect;if(h>bh){h=bh;w=bh*aspect}
+    return {page:p,x:(f.x+f.w/2-w/2)/p.k,y:(f.y+f.h/2-h/2)/p.k,w:w/p.k,h:h/p.k,fig:f};
+  }
   // Frame the whole figure, sometimes with extra room so captions and margin come along.
   const pad=chance(0.4)?rand(1.3,1.6):rand(1.06,1.2);
   let w=f.w*pad,h=f.h*pad;
@@ -352,39 +376,34 @@ function toPalette(src,ramp,cell){
   const out=cv(W,H);cx(out).putImageData(img,0,0);return out;
 }
 
-// ---------- comic layout ----------
-// Rows of varying height, each split into 1 to 3 panels, the odd panel stacked in two.
-// Gutters are just wide enough for a cutter to separate the stickers.
-function comicLayout(W,H,density){
-  const m=0.1*DPI,gut=0.09*DPI,iw=W-2*m,ih=H-2*m;
-  const rowIn={few:2.7,mid:2.0,many:1.5}[density];
-  const rows=Math.max(2,Math.round(ih/DPI/rowIn+rand(-0.35,0.35)));
-  const rw=Array.from({length:rows},()=>rand(0.7,1.35)),rs=rw.reduce((a,b)=>a+b,0);
-  const maxCols=Math.max(1,Math.round(iw/DPI/(rowIn*0.85)));
-  const panels=[];let y=m,prevCols=0;
+// ---------- stamp layout ----------
+// Rows of stamp-sized stickers, mostly portrait with some landscape, each row stretched to the
+// full sheet width like a stamp album page. Gutters are wide enough for a cutter.
+const STAMP_ROW={small:0.95,mid:1.2,large:1.55}; // row height in inches
+function stampLayout(W,H,size){
+  const m=0.12*DPI,gut=0.12*DPI,iw=W-2*m,ih=H-2*m;
+  const target=STAMP_ROW[size]*DPI,rows=Math.max(1,Math.round((ih+gut)/(target+gut))),h=(ih-gut*(rows-1))/rows;
+  const panels=[];
   for(let r=0;r<rows;r++){
-    const h=(ih-gut*(rows-1))*rw[r]/rs;
-    let cols=1+Math.floor(rand()*maxCols);if(cols===prevCols&&chance(0.6))cols=1+((cols)%maxCols);prevCols=cols;
-    const cw=Array.from({length:cols},()=>rand(0.6,1.5)),cs=cw.reduce((a,b)=>a+b,0);
-    let x=m;
-    for(let c=0;c<cols;c++){
-      const w=(iw-gut*(cols-1))*cw[c]/cs;
-      if(cols>1&&h>1.7*DPI&&chance(0.22)){const h1=(h-gut)*rand(0.4,0.6);
-        panels.push({x,y,w,h:h1},{x,y:y+h1+gut,w,h:h-h1-gut});}
-      else panels.push({x,y,w,h});
-      x+=w+gut;
+    const ws=[];let sum=-gut;
+    while(true){
+      const a=chance(0.55)?rand(0.74,0.84):chance(0.35)?rand(0.95,1.05):rand(1.3,1.6);
+      const w=h*a;
+      if(ws.length&&sum+gut+w>iw){if(iw-sum<w*0.5||ws.length>=2)break;}
+      ws.push(w);sum+=gut+w;if(sum>=iw)break;
     }
-    y+=h+gut;
+    const k=(iw-gut*(ws.length-1))/ws.reduce((a,b)=>a+b,0);
+    let x=m;for(const w of ws){panels.push({x,y:m+r*(h+gut),w:w*k,h});x+=w*k+gut;}
   }
   return panels;
 }
 
 // ---------- sheet ----------
 let sheet=null;
-const RADIUS=0.05*DPI;
-function roundRect(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+// paper margin round the picture, like the white edge of a stamp, but cut straight
+const MARGIN=0.07*DPI;
 function renderPanel(pn){
-  const W=Math.round(pn.w),H=Math.round(pn.h);
+  const W=Math.round(pn.w-2*MARGIN),H=Math.round(pn.h-2*MARGIN);
   pn.src=sourceFor(W/H);pn.ramp=rampFor(sheet.pal);
   pn.canvas=pn.src?toPalette(crop(pn.src,W,H),pn.ramp,+$('#dots').value):null;
 }
@@ -394,27 +413,26 @@ async function generate(fromButton){
   if(fromButton&&$('#randPal').checked){const ks=Object.keys(PALETTES).filter(k=>k!==$('#palette').value);$('#palette').value=ks[Math.floor(Math.random()*ks.length)];showSwatches();}
   const seed=+$('#seed').value||1;rng=mulberry32(seed);used=[];usedFigs=new Set();usedPages=new Set();
   const [wi,hi]=SHEETS[$('#sheetSize').value],W=Math.round(wi*DPI),H=Math.round(hi*DPI);
-  sheet={W,H,pal:PALETTES[$('#palette').value],panels:comicLayout(W,H,$('#density').value)};
+  sheet={W,H,pal:PALETTES[$('#palette').value],panels:stampLayout(W,H,$('#stampSize').value)};
   for(let i=0;i<sheet.panels.length;i++){
-    setStatus(`panel ${i+1} of ${sheet.panels.length}…`);await tick();
+    setStatus(`sticker ${i+1} of ${sheet.panels.length}…`);await tick();
     renderPanel(sheet.panels[i]);render();
   }
-  setStatus(`${pages.length} pages in, ${sheet.panels.length} panels out. Seed ${seed}.`);
+  setStatus(`${pages.length} pages in, ${sheet.panels.length} stickers out. Seed ${seed}.`);
 }
 async function reroll(pn){
   setStatus('swapping…');await tick();
-  rng=mulberry32(Date.now()&0xffffffff);renderPanel(pn);render();setStatus('swapped one panel.');
+  rng=mulberry32(Date.now()&0xffffffff);renderPanel(pn);render();setStatus('swapped one sticker.');
 }
 
-function drawSheet(g,{cuts=false,art=true,cutOnly=false}={}){
-  const {W,H}=sheet,dark=[...sheet.pal.c].sort((a,b)=>lumHex(a)-lumHex(b))[0];g.clearRect(0,0,W,H);
+function drawSheet(g,{cuts=false,cutOnly=false}={}){
+  const {W,H}=sheet,paper=[...sheet.pal.c].sort((a,b)=>lumHex(b)-lumHex(a))[0];g.clearRect(0,0,W,H);
   for(const pn of sheet.panels){
     if(!cutOnly&&pn.canvas){
-      g.save();roundRect(g,pn.x,pn.y,pn.w,pn.h,RADIUS);g.clip();g.drawImage(pn.canvas,pn.x,pn.y,pn.w,pn.h);
-      if($('#keyline').checked){g.strokeStyle=pn.ramp[0]||dark;g.lineWidth=0.05*DPI;roundRect(g,pn.x,pn.y,pn.w,pn.h,RADIUS);g.stroke();}
-      g.restore();
+      g.fillStyle=paper;g.fillRect(pn.x,pn.y,pn.w,pn.h);
+      g.drawImage(pn.canvas,pn.x+MARGIN,pn.y+MARGIN,pn.w-2*MARGIN,pn.h-2*MARGIN);
     }
-    if(cuts||cutOnly){g.save();g.strokeStyle=cutOnly?'#000':'rgba(255,0,90,.85)';g.lineWidth=3;roundRect(g,pn.x,pn.y,pn.w,pn.h,RADIUS);g.stroke();g.restore();}
+    if(cuts||cutOnly){g.save();g.strokeStyle=cutOnly?'#000':'rgba(255,0,90,.85)';g.lineWidth=3;g.strokeRect(pn.x,pn.y,pn.w,pn.h);g.restore();}
   }
 }
 function render(){
@@ -432,7 +450,7 @@ const tick=()=>new Promise(r=>setTimeout(r,0));
 function setStatus(s){$('#status').textContent=s}
 function showSwatches(){$('#swatches').innerHTML=PALETTES[$('#palette').value].c.map(c=>`<span style="background:${c}"></span>`).join('')}
 for(const [k,p] of Object.entries(PALETTES)){const o=document.createElement('option');o.value=k;o.textContent=p.name;$('#palette').append(o)}
-$('#palette').value='brkw';showSwatches();
+$('#palette').value='forest';showSwatches();
 
 async function loadFiles(files){
   const list=[...files].filter(f=>f.type.startsWith('image/'));
@@ -456,8 +474,8 @@ document.addEventListener('drop',e=>{e.preventDefault();loadFiles(e.dataTransfer
 
 $('#regen').onclick=()=>{$('#seed').value=Math.floor(Math.random()*9999);generate(true)};
 $('#palette').addEventListener('change',()=>{showSwatches();generate()});
-['#sheetSize','#density','#dots','#seed'].forEach(s=>$(s).addEventListener('change',()=>generate()));
-['#cutlines','#keyline'].forEach(s=>$(s).addEventListener('change',()=>sheet&&render()));
+['#sheetSize','#stampSize','#dots','#seed'].forEach(s=>$(s).addEventListener('change',()=>generate()));
+['#cutlines'].forEach(s=>$(s).addEventListener('change',()=>sheet&&render()));
 $('#dlSheet').onclick=()=>download(`stickers-${$('#palette').value}-${$('#seed').value}.png`,{});
 $('#dlCut').onclick=()=>download(`cutlines-${$('#seed').value}.png`,{cutOnly:true});
 
