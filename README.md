@@ -1,13 +1,15 @@
 # scan to sticker
 
-I photographed 45 pages of an old insect book and wanted stickers out of them without cutting the book. This takes the photos, finds where the pictures, the body text and the blank paper are, and cuts random pieces into stickers. Some get pressed over with one or two flat inks, like a block print on a dictionary page. Then it packs them onto a sheet.
+I photographed 45 pages of an old insect book and wanted stickers out of them without cutting the book. This takes the photos, straightens each page, finds the whole pictures, the body text and the blank paper, and lays them out in rows like a sheet of stamps. Every stamp is its own sticker, cut straight, with a paper margin round the picture.
 
 Open `index.html` in a browser and drop the photos on it. Nothing uploads anywhere.
 
-Six styles: overprint (text page with two ink blocks on top), page clip (a straight cut of figure, text and white space), stamp (round, one ink), cutout (ink only, cut around its own shape), text snip (torn strip of text), duotone (photo in one ink). Click a sticker on the sheet to reroll it. Same seed gives the same sheet.
+Each sheet uses one palette: green beige black brown, or black and white. The picture gets mapped onto those colours dark to light, with a halftone screen between them, so two colours can still show shading. Some stamps use three of the four colours so the sheet doesn't look like one filter.
 
-Sheet PNG prints at 300 dpi on letter, half letter, 4×6 or A4. Cut PNG is the same thing with a transparent background, which is what Cricut print then cut wants.
+A stamp is about 3 cm tall, mostly portrait with some square and landscape ones, and each row is stretched to the sheet width. Rectangular photos get cropped inside their own edges so the picture runs straight to the margin. The rest frame a whole figure, sometimes with its caption, and now and then a column of text or a chapter title. Gutters are 3 mm, enough for a cutter. Click a stamp to swap its picture. Same seed gives the same sheet.
 
-The scans I had were 360 by 640, which is too small. Body text turns to mush and photo styles look soft. Ink styles hide it. Full size phone photos, around 3000 px, should fix most of that.
+The default sheet is 14 by 21 cm at 300 dpi. Sticker PNG has a transparent background. Cut lines PNG is the stamp outlines alone, for a cutter that wants its own layer.
 
-`window.__debugMaps()` in the console returns an image of the page analysis, red desk, blue figure, green text.
+The scans I had were 360 by 640, which is too small. Small type turns to dots. Full size phone photos, around 3000 px, should fix that. Pages shot at an angle get rotated straight, but keystone from tilting the phone stays, so shoot from directly above.
+
+`window.__debugMaps()` in the console returns an image of the page analysis: red desk, blue figure, green text, yellow boxes around whole figures.
