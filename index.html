@@ -21,7 +21,7 @@ label.k{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.
 #drop b{color:var(--ink)}
 select,input[type=number]{width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;font:inherit}
 .row{display:flex;gap:8px}
-.row>*{flex:1}
+.row>*{flex:1;min-width:0}
 .checks{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}
 .checks label{display:flex;gap:6px;align-items:center;font-size:13px}
 button{font:inherit;padding:9px 10px;border-radius:6px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer}
@@ -29,11 +29,14 @@ button.ghost{background:transparent;color:var(--ink)}
 button:disabled{opacity:.4;cursor:default}
 .hint{font-size:12.5px;color:var(--muted)}
 #status{font-size:12.5px;color:var(--muted);min-height:1.4em}
+#swatches{display:flex;gap:4px;margin-top:6px}
+#swatches span{flex:1;height:18px;border-radius:3px;border:1px solid #0002}
 main{padding:24px;display:flex;justify-content:center;align-items:flex-start;overflow:auto}
-#wrap{width:min(100%,860px)}
-#sheet{display:block;width:100%;height:auto;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08),0 8px 28px rgba(0,0,0,.12);cursor:pointer}
+#wrap{width:min(100%,620px)}
+/* checkerboard so the transparent sheet reads as transparent */
+#sheet{display:block;width:100%;height:auto;cursor:pointer;border-radius:4px;
+  background:repeating-conic-gradient(#e2ddd2 0 25%,#f4f1ea 0 50%) 0 0/18px 18px;box-shadow:0 1px 2px rgba(0,0,0,.08),0 8px 28px rgba(0,0,0,.12)}
 #empty{padding:80px 20px;text-align:center;color:var(--muted)}
-.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:2px;vertical-align:-1px}
 @media (max-width:760px){
   body{grid-template-columns:1fr}
   aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
@@ -43,7 +46,7 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
 </head>
 <body>
 <aside>
-  <h1>scan to sticker<small>Book scans in, sticker sheet out.</small></h1>
+  <h1>scan to sticker<small>Book scans in, comic page of stickers out.</small></h1>
 
   <div>
     <label class="k">Scans</label>
@@ -52,54 +55,52 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
   </div>
 
   <div>
-    <label class="k">Inks</label>
+    <label class="k">Palette</label>
     <select id="palette"></select>
-  </div>
-
-  <div>
-    <label class="k">Styles</label>
-    <div class="checks" id="styles"></div>
+    <div id="swatches"></div>
   </div>
 
   <div class="row">
     <div><label class="k">Sheet</label>
       <select id="sheetSize">
-        <option value="letter">Letter 8.5×11</option>
-        <option value="half">Half 5.5×8.5</option>
-        <option value="4x6">4×6</option>
-        <option value="a4">A4</option>
+        <option value="14x21" selected>14 × 21 cm</option>
+        <option value="a5">A5</option>
+        <option value="4x6">4 × 6 in</option>
+        <option value="letter">Letter</option>
       </select></div>
     <div><label class="k">Seed</label><input id="seed" type="number" value="763"></div>
   </div>
 
   <div class="row">
-    <div><label class="k">Biggest</label>
-      <select id="maxSize">
-        <option value="2.5">2.5 in</option>
-        <option value="3.2" selected>3.2 in</option>
-        <option value="4">4 in</option>
+    <div><label class="k">Panels</label>
+      <select id="density">
+        <option value="few">fewer, bigger</option>
+        <option value="mid" selected>normal</option>
+        <option value="many">more, smaller</option>
       </select></div>
-    <div><label class="k">Border</label>
-      <select id="border">
-        <option value="0.04">thin</option>
-        <option value="0.07" selected>normal</option>
-        <option value="0.11">fat</option>
+    <div><label class="k">Dots</label>
+      <select id="dots">
+        <option value="5">fine</option>
+        <option value="7" selected>comic</option>
+        <option value="11">big</option>
+        <option value="0">none</option>
       </select></div>
   </div>
 
   <div class="checks">
-    <label><input type="checkbox" id="cutlines" checked> cut lines</label>
-    <label><input type="checkbox" id="shadow" checked> shadows</label>
+    <label><input type="checkbox" id="keyline" checked> panel lines</label>
+    <label><input type="checkbox" id="cutlines"> cut lines</label>
+    <label><input type="checkbox" id="randPal"> new palette each sheet</label>
   </div>
 
   <button id="regen" disabled>New sheet</button>
-  <div class="hint">Click any sticker on the sheet to reroll just that one.</div>
+  <div class="hint">Click a panel to swap in a different picture.</div>
 
   <div class="row">
-    <button class="ghost" id="dlSheet" disabled>Sheet PNG</button>
-    <button class="ghost" id="dlCut" disabled>Cut PNG</button>
+    <button class="ghost" id="dlSheet" disabled>Sticker PNG</button>
+    <button class="ghost" id="dlCut" disabled>Cut lines PNG</button>
   </div>
-  <div class="hint">Sheet PNG is for printing on a full sticker sheet. Cut PNG has a transparent background, for Cricut print then cut.</div>
+  <div class="hint">Sticker PNG has a transparent background at 300 dpi. Cut lines PNG is the panel outlines only, for a cutter that wants a separate cut layer.</div>
 
   <div id="status"></div>
 </aside>
@@ -113,28 +114,23 @@ main{padding:24px;display:flex;justify-content:center;align-items:flex-start;ove
 
 <script>
 'use strict';
-// Everything renders at print resolution so the sheet PNG is ready for a printer as-is.
+// Everything renders at print resolution so the PNG is ready for a printer as-is.
 const DPI = 300;
+const CM = DPI/2.54;
 
+// Colours in any order; they get sorted dark to light when mapped onto an image.
 const PALETTES = {
-  indigo:     {name:'indigo + vermilion',     a:'#c8352a', b:'#26386f', paper:'#f2ead8', dark:'#2b2721'},
-  dictionary: {name:'dictionary red + blue',  a:'#cf2534', b:'#203d91', paper:'#efe6d1', dark:'#272320'},
-  riso:       {name:'riso pink + teal',       a:'#ff4a86', b:'#0d7c85', paper:'#f6f1e6', dark:'#2a2a2a'},
-  sumi:       {name:'sumi + vermilion',       a:'#d8432f', b:'#1d1c1b', paper:'#f1ebde', dark:'#1d1c1b'},
-  moss:       {name:'moss + rust',            a:'#b4532a', b:'#3c5a3a', paper:'#efe8d6', dark:'#2a2a22'},
+  bw:        {name:'black, white',                    c:['#141414','#f5f2ea']},
+  brkw:      {name:'blue, red, black, white',         c:['#141414','#1f3c8f','#cf2534','#f4efe3']},
+  forest:    {name:'green, beige, black, brown',      c:['#151412','#5a3b26','#56703c','#e9dcc0']},
+  indigo:    {name:'indigo, vermilion, cream',        c:['#1a1b29','#26386f','#d0402e','#f2ead8']},
+  sepia:     {name:'sepia',                           c:['#25190f','#74512f','#c7a477','#f2e7d3']},
+  riso:      {name:'teal, pink, black, paper',        c:['#1e1e1e','#0d7c85','#ff5a8f','#f6f1e6']},
+  mustard:   {name:'pine, mustard, black, cream',     c:['#171717','#2c5a4c','#d9a521','#f3ecdc']},
+  navy:      {name:'navy, white',                     c:['#18264f','#f4f1ea']},
 };
 
-const STYLES = {
-  overprint: {label:'overprint', on:true},
-  clip:      {label:'page clip', on:true},
-  stamp:     {label:'stamp',     on:true},
-  cutout:    {label:'cutout',    on:true},
-  snip:      {label:'text snip', on:true},
-  duotone:   {label:'duotone',   on:true},
-};
-
-const SHEETS = {letter:[8.5,11], half:[5.5,8.5], '4x6':[4,6], a4:[8.27,11.69]};
-
+const SHEETS = {'14x21':[14/2.54,21/2.54], a5:[14.8/2.54,21/2.54], '4x6':[4,6], letter:[8.5,11]};
 // ---------- small helpers ----------
 const $ = s => document.querySelector(s);
 function cv(w,h){const c=document.createElement('canvas');c.width=Math.max(1,Math.round(w));c.height=Math.max(1,Math.round(h));return c}
@@ -185,9 +181,10 @@ function otsu(L){
   return (t+0.5)/64;
 }
 
+function levels(L,lo,hi){for(let i=0;i<L.length;i++)L[i]=clamp((L[i]-lo)/Math.max(0.05,hi-lo));return L}
 // ---------- page analysis ----------
 // Each photo gets a coarse map of where the desk, the figures, the body text and the blank paper are,
-// so random crops can ask for "mostly picture" or "mostly text" instead of landing on the tabletop.
+// so panels can ask for a whole picture or a block of text instead of landing on the tabletop.
 const pages = [];
 
 function analyze(img,name){
@@ -241,6 +238,7 @@ function analyze(img,name){
     text:integral(boxBlur(text,aw,ah,3),aw,ah),white:integral(white,aw,ah),
     lum:integral(L,aw,ah),lum2:integral(L2,aw,ah),
     maps:{desk,fig,text,white}};
+  p.box={x0:bx0,y0:by0,x1:bx1,y1:by1};p.figs=findFigures(fig,desk,aw,ah);
   p.figShare=rectMean(p.fig,aw,0,0,aw,ah);p.textShare=rectMean(p.text,aw,0,0,aw,ah);
   return p;
 }
@@ -257,12 +255,12 @@ const RULES={
   text: {size:[0.12,0.45], ok:f=>f.text>0.6&&f.fig<0.04&&f.desk<0.005},
   mixed:{size:[0.28,0.7],  ok:f=>f.fig>0.15&&f.fig<0.6&&f.text>0.12&&f.text+f.white>0.35&&f.desk<0.005&&f.sd>0.14},
 };
-function pickRegion(kind,aspect){
+function pickRegion(kind,aspect,size){
   const rule=RULES[kind];
   const pool=pages.filter(p=>kind==='text'?p.textShare>0.05:p.figShare>0.05);
   if(!pool.length)return null;
   for(let t=0;t<500;t++){
-    const p=pick(pool),s=rand(...rule.size)*Math.min(p.aw,p.ah);
+    const p=pick(pool),s=rand(...(size||rule.size))*Math.min(p.aw,p.ah);
     let w=s*Math.sqrt(aspect),h=s/Math.sqrt(aspect);
     if(w>p.aw*0.95||h>p.ah*0.95||w<14||h<14)continue;
     const x=rand(0,p.aw-w),y=rand(0,p.ah-h);
@@ -282,293 +280,147 @@ function crop(r,W,H){
   g.drawImage(r.page.full,r.x,r.y,r.w,r.h,0,0,c.width,c.height);return c;
 }
 
-// ---------- ink + paper treatments ----------
-// Turn a photo crop into one flat ink layer: hard threshold, grainy edges, and the blotchy
-// under-inked patches you get from a hand-pressed block.
-function toInk(src,color,o={}){
-  const W=src.width,H=src.height,g=cx(src),img=g.getImageData(0,0,W,H),d=img.data,L=lumOf(d);
-  levels(L,percentile(L,0.02),percentile(L,0.98));
-  let t=otsu(L)+(o.bias??rand(-0.04,0.06));
-  let cover=0;for(let i=0;i<L.length;i+=7)cover+=L[i]<t;cover/=L.length/7;
-  const inv=o.invert??(cover>0.78);
-  const n1=newNoise(),n2=newNoise(),n3=newNoise(),[r,gg,b]=hex(color);
-  const sc=Math.min(W,H),edge=o.edge??0,grain=o.grain??1,mott=o.mottle??0.55;
-  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
-    const i=y*W+x,l=inv?1-L[i]:L[i];
-    let v=smooth(-0.5,0.5,(t-l)*(inv?-1:1)*9+(n2(x/1.6,y/1.6)-0.5)*0.9*grain+(n1(x/9,y/9)-0.5)*0.5*grain);
-    v*=1-clamp((n3(x/(sc*0.12),y/(sc*0.12))-0.64)*2.4)*mott;
-    if(edge){const e=Math.min(x,y,W-1-x,H-1-y)+(n1(x/5+40,y/5)-0.5)*edge*1.6+(n2(x/40,y/40)-0.5)*edge;
-      v*=clamp((e-edge*0.3)/1.5);}
-    d[i*4]=r;d[i*4+1]=gg;d[i*4+2]=b;d[i*4+3]=v*255*(o.alpha??0.94);
+// Whole pictures, not fragments: connected blobs of "figure" pixels become candidate panels,
+// so a panel can show the entire insect plus the text and white space around it.
+function findFigures(fig,desk,aw,ah){
+  const N=aw*ah,b=boxBlur(fig,aw,ah,2),m=new Uint8Array(N);
+  for(let i=0;i<N;i++)m[i]=b[i]>0.45&&!desk[i]?1:0;
+  const lab=new Int32Array(N),q=new Int32Array(N),out=[];let id=0;
+  for(let s=0;s<N;s++){
+    if(!m[s]||lab[s])continue;id++;let qh=0,qt=0;q[qt++]=s;lab[s]=id;
+    let x0=aw,y0=ah,x1=0,y1=0,n=0;
+    while(qh<qt){const i=q[qh++],x=i%aw,y=(i/aw)|0;n++;
+      if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+      if(x>0&&m[i-1]&&!lab[i-1]){lab[i-1]=id;q[qt++]=i-1}
+      if(x<aw-1&&m[i+1]&&!lab[i+1]){lab[i+1]=id;q[qt++]=i+1}
+      if(y>0&&m[i-aw]&&!lab[i-aw]){lab[i-aw]=id;q[qt++]=i-aw}
+      if(y<ah-1&&m[i+aw]&&!lab[i+aw]){lab[i+aw]=id;q[qt++]=i+aw}}
+    const w=x1-x0+1,h=y1-y0+1;
+    if(n>N*0.006&&w>14&&h>14&&n/(w*h)>0.2)out.push({x:x0,y:y0,w,h,n});
   }
-  const out=cv(W,H);cx(out).putImageData(img,0,0);out.cover=inv?1-cover:cover;return out;
+  return out;
 }
-function levels(L,lo,hi){for(let i=0;i<L.length;i++)L[i]=clamp((L[i]-lo)/Math.max(0.05,hi-lo));return L}
-// Text crops become old-paper print: page white maps to the paper tone, type maps to warm near-black.
-function paperText(src,pal,fade=0){
-  const W=src.width,H=src.height,img=cx(src).getImageData(0,0,W,H),d=img.data,L=lumOf(d);
-  levels(L,percentile(L,0.03),percentile(L,0.95));
-  const P=hex(pal.paper),D=hex(pal.dark);
-  for(let i=0;i<L.length;i++){const v=clamp(smooth(0.15,0.85,L[i])+fade);
-    for(let c=0;c<3;c++)d[i*4+c]=D[c]+(P[c]-D[c])*v;d[i*4+3]=255;}
-  const out=cv(W,H);cx(out).putImageData(img,0,0);return out;
+
+// ---------- panel sources ----------
+let usedFigs=new Set(),usedPages=new Set();
+function figRect(p,f,aspect){
+  // Frame the whole figure, sometimes with extra room so captions and margin come along.
+  const pad=chance(0.4)?rand(1.3,1.6):rand(1.06,1.2);
+  let w=f.w*pad,h=f.h*pad;
+  if(w/h<aspect)w=h*aspect;else h=w/aspect;
+  const B=p.box,PW=B.x1-B.x0,PH=B.y1-B.y0,s=Math.min(1,PW/w,PH/h);w*=s;h*=s;
+  const x=clamp(f.x+f.w/2-w/2,B.x0,B.x1-w),y=clamp(f.y+f.h/2-h/2,B.y0,B.y1-h);
+  return {page:p,x:x/p.k,y:y/p.k,w:w/p.k,h:h/p.k,fig:f};
 }
-// Photo crops keep their colour but get the page white pushed to paper and a little less saturation.
-function warm(src,pal){
-  const W=src.width,H=src.height,img=cx(src).getImageData(0,0,W,H),d=img.data,L=lumOf(d);
-  const hi=percentile(L,0.97),P=hex(pal.paper);
-  for(let i=0;i<L.length;i++){const l=L[i]*255;
-    for(let c=0;c<3;c++){let v=d[i*4+c]*0.82+l*0.18;v=clamp(v/(hi*255))*P[c];d[i*4+c]=v}}
-  const out=cv(W,H);cx(out).putImageData(img,0,0);return out;
+function sourceFor(aspect){
+  if(chance(0.14)){const r=pickRegion('text',aspect,[0.35,0.7]);if(r){usedPages.add(r.page);return r;}}
+  const all=[];for(const p of pages)for(const f of p.figs)all.push([p,f]);
+  if(!all.length)return pickRegion('mixed',aspect)||pickRegion('text',aspect);
+  let pool=all.filter(([p,f])=>!usedFigs.has(f)&&!usedPages.has(p));
+  if(!pool.length)pool=all.filter(([,f])=>!usedFigs.has(f));
+  if(!pool.length){usedFigs.clear();pool=all}
+  // a figure whose shape is close to the panel's keeps more of itself in frame
+  let best=null,bs=-1;
+  for(let t=0;t<6;t++){const c=pick(pool),fa=c[1].w/c[1].h,score=Math.min(fa,aspect)/Math.max(fa,aspect)+rand(0,0.5);if(score>bs){bs=score;best=c}}
+  usedFigs.add(best[1]);usedPages.add(best[0]);
+  return figRect(best[0],best[1],aspect);
 }
-function duotone(src,dark,light){
-  const W=src.width,H=src.height,img=cx(src).getImageData(0,0,W,H),d=img.data,L=lumOf(d);
-  levels(L,percentile(L,0.02),percentile(L,0.98));
-  const A=hex(dark),B=hex(light),n=newNoise();
-  for(let i=0;i<L.length;i++){const x=i%W,y=(i/W)|0,v=clamp(L[i]+(n(x/1.5,y/1.5)-0.5)*0.12);
-    for(let c=0;c<3;c++)d[i*4+c]=A[c]+(B[c]-A[c])*v;d[i*4+3]=255;}
-  const out=cv(W,H);cx(out).putImageData(img,0,0);return out;
+
+// ---------- palette mapping ----------
+const lumHex=h=>{const [r,g,b]=hex(h);return 0.299*r+0.587*g+0.114*b};
+function rampFor(pal){
+  const s=[...pal.c].sort((a,b)=>lumHex(a)-lumHex(b));
+  if(s.length<4||chance(0.45))return s;
+  // three-colour panels: darkest, lightest and one of the middles, so the sheet alternates
+  return [s[0],pick(s.slice(1,-1)),s[s.length-1]];
 }
-// Multiply an alpha mask with rough, torn-looking edges into a canvas.
-function roughen(c,amp,sides='tblr'){
-  const W=c.width,H=c.height,img=cx(c).getImageData(0,0,W,H),d=img.data,n=newNoise(),m=newNoise();
+// Gradient map onto the palette. Between two palette colours a halftone screen decides which one a
+// pixel gets, so a two-colour palette still shows shading the way old comics did.
+function toPalette(src,ramp,cell){
+  const W=src.width,H=src.height,img=cx(src).getImageData(0,0,W,H),d=img.data;
+  let L=lumOf(d);
+  const Lb=boxBlur(L,W,H,Math.max(2,Math.round(Math.min(W,H)/120)));
+  for(let i=0;i<L.length;i++)L[i]=L[i]+0.9*(L[i]-Lb[i]); // unsharp, so type and outlines hold up
+  levels(L,percentile(L,0.015),percentile(L,0.985));
+  const C=ramp.map(hex),K=C.length,co=Math.cos(0.5236),si=Math.sin(0.5236);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
-    let e=1e9;
-    if(sides.includes('t'))e=Math.min(e,y);if(sides.includes('b'))e=Math.min(e,H-1-y);
-    if(sides.includes('l'))e=Math.min(e,x);if(sides.includes('r'))e=Math.min(e,W-1-x);
-    const j=(n(x/(amp*1.2),y/(amp*1.2))-0.5)*amp*1.6+(m(x/3,y/3)-0.5)*amp*0.35;
-    const a=clamp((e-amp*0.9+j)/1.2);d[(y*W+x)*4+3]*=a;
+    const o=y*W+x,v=clamp(L[o]),s=v*(K-1),i=Math.min(K-2,Math.floor(s)),f=s-i;
+    let t=0.5;
+    if(cell){const u=(x*co+y*si)/cell,w=(-x*si+y*co)/cell,du=u-Math.floor(u)-0.5,dw=w-Math.floor(w)-0.5;t=clamp((du*du+dw*dw)*2);}
+    const c=C[f>t?i+1:i];d[o*4]=c[0];d[o*4+1]=c[1];d[o*4+2]=c[2];d[o*4+3]=255;
   }
-  cx(c).putImageData(img,0,0);return c;
-}
-function multiply(g,layer,x,y){g.save();g.globalCompositeOperation='multiply';g.drawImage(layer,x,y);g.restore()}
-// Retry until the ink covers a sensible share of the block; flat crops give a solid slab or nothing.
-function inkBlock(kind,W,H,color,o){
-  for(let t=0;t<5;t++){const r=pickRegion(kind,W/H);if(!r)return null;
-    const ink=toInk(crop(r,W,H),color,o);if(ink.cover>0.18&&ink.cover<0.68)return ink;}
-  return null;
+  const out=cv(W,H);cx(out).putImageData(img,0,0);return out;
 }
 
-// ---------- sticker styles ----------
-// Each returns {art, shape}. art is a canvas with transparent outside the sticker shape.
-function dims(px,aspect){return aspect>=1?[px,px/aspect]:[px*aspect,px]}
-const BUILD = {
-  // The reference look: an old text page with two misregistered block prints pressed over it.
-  overprint(px,pal){
-    const [W,H]=dims(px,rand(0.72,1.35)),art=cv(W,H),g=cx(art);
-    g.fillStyle=pal.paper;g.fillRect(0,0,W,H);
-    const tr=pickRegion('text',W/H);if(tr)g.drawImage(paperText(crop(tr,W,H),pal,0.08),0,0);
-    const flip=chance(0.5),first=flip?pal.a:pal.b,second=flip?pal.b:pal.a;
-    const bw=W*rand(0.62,0.9),bh=H*rand(0.5,0.72),edge=Math.min(W,H)*0.025;
-    const A=inkBlock('fig',bw,bh,first,{edge});if(!A)return null;
-    const ax=chance(0.5)?W*rand(0.03,0.08):W-bw-W*rand(0.03,0.08),ay=H*rand(0.25,0.45)-bh*0.3;
-    multiply(g,A,ax,clamp(ay,H*0.03,H-bh-H*0.03));
-    const cw=W*rand(0.38,0.55),ch=H*rand(0.3,0.45);
-    const B=inkBlock(chance(0.5)?'fig':'mixed',cw,ch,second,{edge});
-    if(B){const bx=ax<W/2?W-cw-W*rand(0.03,0.1):W*rand(0.03,0.1);
-      multiply(g,B,bx,chance(0.5)?H*rand(0.03,0.08):H-ch-H*rand(0.03,0.08));}
-    if(chance(0.6)){const C=inkBlock('fig',cw*0.8,ch*0.9,second,{edge});
-      if(C)multiply(g,C,ax<W/2?W*rand(0.02,0.1):W-cw*0.8-W*rand(0.02,0.1),H-ch*0.9-H*rand(0.02,0.06));}
-    return {art,shape:'rect'};
-  },
-  // A straight cut of the page: figure, a bit of text, and the white around it.
-  clip(px,pal){
-    const [W,H]=dims(px,rand(0.7,1.4)),r=pickRegion('mixed',W/H);if(!r)return null;
-    const art=cv(W,H),g=cx(art);g.drawImage(warm(crop(r,W,H),pal),0,0);
-    if(chance(0.45)){const s=Math.min(W,H)*rand(0.28,0.42),A=inkBlock('fig',s,s,chance(0.5)?pal.a:pal.b,{edge:s*0.03,alpha:0.85});
-      if(A)multiply(g,A,chance(0.5)?W*0.06:W-s-W*0.06,chance(0.5)?H*0.06:H-s-H*0.06);}
-    return {art,shape:'rect'};
-  },
-  // Round stamp: one ink, figure inside a ring.
-  stamp(px,pal){
-    const W=px,art=cv(W,W),g=cx(art),col=chance(0.55)?pal.a:pal.b;
-    g.fillStyle=pal.paper;g.beginPath();g.arc(W/2,W/2,W/2,0,7);g.fill();
-    const A=inkBlock('fig',W,W,col,{mottle:0.4});if(!A)return null;
-    g.save();g.beginPath();g.arc(W/2,W/2,W*0.42,0,7);g.clip();multiply(g,A,0,0);g.restore();
-    const ring=cv(W,W),rg=ring.getContext('2d');rg.strokeStyle=col;rg.lineWidth=W*0.035;
-    rg.beginPath();rg.arc(W/2,W/2,W*0.455,0,7);rg.stroke();
-    multiply(g,toInkRing(ring),0,0);
-    return {art,shape:'circle'};
-  },
-  // Just the ink, die cut around its own silhouette.
-  cutout(px,pal){
-    const [W,H]=dims(px,rand(0.75,1.3)),r=pickRegion('fig',W/H);if(!r)return null;
-    const src=crop(r,W,H),art=cv(W,H),g=cx(art),off=Math.min(W,H)*0.018;
-    const two=chance(0.6),main=chance(0.5)?pal.a:pal.b,other=main===pal.a?pal.b:pal.a;
-    const A=toInk(src,main,{mottle:0.35,bias:0.02});
-    // a cutout of a dark photo is just a slab; a cutout of almost nothing is confetti
-    if(A.cover<0.2||A.cover>0.6)return null;
-    if(two){const B=toInk(crop(r,W,H),other,{mottle:0.5,bias:-0.06,alpha:0.9});g.drawImage(B,off,off);multiply(g,A,0,0);}
-    else g.drawImage(A,0,0);
-    return {art,shape:'blob'};
-  },
-  // Torn strip of body text, sometimes with a small ink mark.
-  snip(px,pal){
-    const [W,H]=dims(px,rand(1.9,3.2)),r=pickRegion('text',W/H);if(!r)return null;
-    const art=paperText(crop(r,W,H),pal),g=cx(art);
-    if(chance(0.6)){const s=H*rand(0.55,0.8),A=inkBlock('fig',s,s,chance(0.5)?pal.a:pal.b,{edge:s*0.04});
-      if(A)multiply(g,A,chance(0.5)?W*0.05:W-s-W*0.05,(H-s)/2);}
-    roughen(art,Math.min(W,H)*0.05,chance(0.5)?'tb':'tblr');
-    return {art,shape:'blob'};
-  },
-  // Photo printed in one ink on paper, with an offset second-colour block.
-  duotone(px,pal){
-    const [W,H]=dims(px,rand(0.7,1.3)),r=pickRegion('fig',W/H);if(!r)return null;
-    const art=cv(W,H),g=cx(art),useB=chance(0.6);
-    g.drawImage(duotone(crop(r,W,H),useB?pal.b:pal.a,pal.paper),0,0);
-    if(chance(0.5)){const s=Math.min(W,H)*rand(0.3,0.45),A=inkBlock('fig',s,s*rand(0.7,1.2),useB?pal.a:pal.b,{edge:s*0.03,alpha:0.8});
-      if(A)multiply(g,A,rand(0.05,0.55)*W,rand(0.05,0.55)*H);}
-    return {art,shape:'rect'};
-  },
-};
-function toInkRing(c){ // give the stamp ring the same worn texture as the ink
-  const W=c.width,H=c.height,img=cx(c).getImageData(0,0,W,H),d=img.data,n=newNoise(),m=newNoise();
-  for(let i=0;i<W*H;i++){const x=i%W,y=(i/W)|0;d[i*4+3]*=clamp(1-(n(x/30,y/30)-0.6)*2.5)*(0.75+0.25*m(x/2,y/2));}
-  cx(c).putImageData(img,0,0);return c;
+// ---------- comic layout ----------
+// Rows of varying height, each split into 1 to 3 panels, the odd panel stacked in two.
+// Gutters are just wide enough for a cutter to separate the stickers.
+function comicLayout(W,H,density){
+  const m=0.1*DPI,gut=0.09*DPI,iw=W-2*m,ih=H-2*m;
+  const rowIn={few:2.7,mid:2.0,many:1.5}[density];
+  const rows=Math.max(2,Math.round(ih/DPI/rowIn+rand(-0.35,0.35)));
+  const rw=Array.from({length:rows},()=>rand(0.7,1.35)),rs=rw.reduce((a,b)=>a+b,0);
+  const maxCols=Math.max(1,Math.round(iw/DPI/(rowIn*0.85)));
+  const panels=[];let y=m,prevCols=0;
+  for(let r=0;r<rows;r++){
+    const h=(ih-gut*(rows-1))*rw[r]/rs;
+    let cols=1+Math.floor(rand()*maxCols);if(cols===prevCols&&chance(0.6))cols=1+((cols)%maxCols);prevCols=cols;
+    const cw=Array.from({length:cols},()=>rand(0.6,1.5)),cs=cw.reduce((a,b)=>a+b,0);
+    let x=m;
+    for(let c=0;c<cols;c++){
+      const w=(iw-gut*(cols-1))*cw[c]/cs;
+      if(cols>1&&h>1.7*DPI&&chance(0.22)){const h1=(h-gut)*rand(0.4,0.6);
+        panels.push({x,y,w,h:h1},{x,y:y+h1+gut,w,h:h-h1-gut});}
+      else panels.push({x,y,w,h});
+      x+=w+gut;
+    }
+    y+=h+gut;
+  }
+  return panels;
 }
 
-// ---------- die cut ----------
-// White border = the art's silhouette, holes filled, grown by the border width with a blur+threshold.
-function dieCut(art,borderPx){
-  const pad=Math.ceil(borderPx*2.2)+4,W=art.width+pad*2,H=art.height+pad*2;
-  const tmp=cv(W,H),tg=cx(tmp);tg.drawImage(art,pad,pad);
-  const ad=tg.getImageData(0,0,W,H).data,M=new Float32Array(W*H);
-  for(let i=0;i<W*H;i++)M[i]=ad[i*4+3]>60?1:0;
-  const r=Math.max(1,Math.round(borderPx/1.75));
-  let D=boxBlur(boxBlur(boxBlur(M,W,H,r),W,H,r),W,H,r);
-  const mask=new Uint8Array(W*H);for(let i=0;i<W*H;i++)mask[i]=D[i]>0.04?1:0;
-  // fill holes so the cutter only follows the outside edge
-  const out=new Uint8Array(W*H),q=new Int32Array(W*H);let qh=0,qt=0;
-  const push=i=>{if(!mask[i]&&!out[i]){out[i]=1;q[qt++]=i}};
-  for(let x=0;x<W;x++){push(x);push((H-1)*W+x)}for(let y=0;y<H;y++){push(y*W);push(y*W+W-1)}
-  while(qh<qt){const i=q[qh++],x=i%W,y=(i/W)|0;if(x>0)push(i-1);if(x<W-1)push(i+1);if(y>0)push(i-W);if(y<H-1)push(i+W);}
-  for(let i=0;i<W*H;i++)mask[i]=out[i]?0:1;
-  // trim to bounds
-  let x0=W,y0=H,x1=0,y1=0;
-  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(mask[y*W+x]){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
-  const cw=x1-x0+1,ch=y1-y0+1,c=cv(cw,ch),g=cx(c),img=g.createImageData(cw,ch),cut=cv(cw,ch),cg=cx(cut),ci=cg.createImageData(cw,ch);
-  const m2=new Uint8Array(cw*ch);
-  for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const s=(y+y0)*W+x+x0,o=y*cw+x;m2[o]=mask[s];
-    if(mask[s]){img.data[o*4]=img.data[o*4+1]=img.data[o*4+2]=255;img.data[o*4+3]=255;}}
-  for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const o=y*cw+x;if(!m2[o])continue;
-    if(x===0||y===0||x===cw-1||y===ch-1||!m2[o-1]||!m2[o+1]||!m2[o-cw]||!m2[o+cw]){ci.data[o*4]=ci.data[o*4+1]=ci.data[o*4+2]=110;ci.data[o*4+3]=255;}}
-  g.putImageData(img,0,0);g.globalCompositeOperation='source-atop';g.drawImage(art,pad-x0,pad-y0);g.globalCompositeOperation='source-over';cg.putImageData(ci,0,0);
-  return {canvas:c,cut,mask:m2,w:cw,h:ch};
-}
-
-// ---------- sheet packing ----------
-const CELL=10; // occupancy grid cell, in print pixels (1/30 in)
+// ---------- sheet ----------
 let sheet=null;
-
-function makeSticker(longIn,styleKeys,pal){
-  for(let t=0;t<8;t++){
-    const style=pick(styleKeys);
-    // styles that look silly huge or tiny get nudged
-    let s=longIn;if(style==='stamp')s=Math.min(s,2.2);if(style==='snip')s=Math.max(s,1.6);
-    const res=BUILD[style](s*DPI,pal);
-    if(!res)continue;
-    if(res.art.width<0.45*DPI||res.art.height<0.45*DPI)continue;
-    const dc=dieCut(res.art,+$('#border').value*DPI*(res.shape==='blob'?1.4:1));
-    if(dc.w<0.5*DPI||dc.h<0.5*DPI)continue;
-    return {...dc,style,longIn};
-  }
-  return null;
-}
-function stickerCells(st,gap){
-  const gw=Math.ceil(st.w/CELL),gh=Math.ceil(st.h/CELL),m=new Uint8Array(gw*gh);
-  for(let y=0;y<st.h;y++)for(let x=0;x<st.w;x++)if(st.mask[y*st.w+x])m[((y/CELL)|0)*gw+((x/CELL)|0)]=1;
-  const cells=[];
-  for(let y=-gap;y<gh+gap;y++)for(let x=-gap;x<gw+gap;x++){
-    let hit=false;
-    for(let dy=-gap;dy<=gap&&!hit;dy++)for(let dx=-gap;dx<=gap&&!hit;dx++){
-      if(dx*dx+dy*dy>gap*gap)continue;const xx=x+dx,yy=y+dy;
-      if(xx>=0&&yy>=0&&xx<gw&&yy<gh&&m[yy*gw+xx])hit=true;}
-    if(hit)cells.push(x,y);
-  }
-  return {gw,gh,cells};
-}
-function fits(grid,gw,gh,cells,cx0,cy0){
-  for(let i=0;i<cells.length;i+=2){const x=cells[i]+cx0,y=cells[i+1]+cy0;
-    if(x<0||y<0||x>=gw||y>=gh)continue; if(grid[y*gw+x])return false;}
-  return true;
-}
-function place(st,prefer){
-  const {grid,gw,gh,marginC}=sheet;
-  const sc=st.cells||(st.cells=stickerCells(st,3));
-  const maxX=gw-marginC-sc.gw,maxY=gh-marginC-sc.gh;if(maxX<marginC||maxY<marginC)return false;
-  let best=null,bs=1e9;
-  const tryAt=(x,y)=>{if(!fits(grid,gw,gh,sc.cells,x,y))return;const s=y+x*0.45+rand(0,4);if(s<bs){bs=s;best=[x,y]}};
-  if(prefer){for(let dy=-6;dy<=6;dy+=2)for(let dx=-6;dx<=6;dx+=2){const x=clamp(prefer[0]+dx,marginC,maxX),y=clamp(prefer[1]+dy,marginC,maxY);
-    if(fits(grid,gw,gh,sc.cells,x,y)){best=[x,y];break}} if(best)return commit(st,best);}
-  for(let t=0;t<3000;t++)tryAt(marginC+Math.floor(rand()*(maxX-marginC+1)),marginC+Math.floor(rand()*(maxY-marginC+1)));
-  if(!best)return false;
-  return commit(st,best);
-}
-function commit(st,[x,y]){
-  const {grid,gw}=sheet;st.gx=x;st.gy=y;
-  for(let i=0;i<st.cells.cells.length;i+=2){const xx=st.cells.cells[i]+x,yy=st.cells.cells[i+1]+y;
-    if(xx>=0&&yy>=0&&xx<gw&&yy<sheet.gh)grid[yy*gw+xx]=1;}
-  return true;
-}
-function unplace(st){
-  const {grid,gw,gh}=sheet;
-  for(let i=0;i<st.cells.cells.length;i+=2){const xx=st.cells.cells[i]+st.gx,yy=st.cells.cells[i+1]+st.gy;
-    if(xx>=0&&yy>=0&&xx<gw&&yy<gh)grid[yy*gw+xx]=0;}
-  // re-stamp the others in case gaps overlapped
-  for(const o of sheet.stickers)if(o!==st)commit(o,[o.gx,o.gy]);
+const RADIUS=0.05*DPI;
+function roundRect(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function renderPanel(pn){
+  const W=Math.round(pn.w),H=Math.round(pn.h);
+  pn.src=sourceFor(W/H);pn.ramp=rampFor(sheet.pal);
+  pn.canvas=pn.src?toPalette(crop(pn.src,W,H),pn.ramp,+$('#dots').value):null;
 }
 
-async function generate(){
+async function generate(fromButton){
   if(!pages.length)return;
-  const seed=+$('#seed').value||1;rng=mulberry32(seed);used=[];
-  const pal=PALETTES[$('#palette').value];
-  const styleKeys=Object.keys(STYLES).filter(k=>$('#st-'+k).checked);if(!styleKeys.length)return;
+  if(fromButton&&$('#randPal').checked){const ks=Object.keys(PALETTES).filter(k=>k!==$('#palette').value);$('#palette').value=ks[Math.floor(Math.random()*ks.length)];showSwatches();}
+  const seed=+$('#seed').value||1;rng=mulberry32(seed);used=[];usedFigs=new Set();usedPages=new Set();
   const [wi,hi]=SHEETS[$('#sheetSize').value],W=Math.round(wi*DPI),H=Math.round(hi*DPI);
-  const gw=Math.ceil(W/CELL),gh=Math.ceil(H/CELL);
-  sheet={W,H,gw,gh,grid:new Uint8Array(gw*gh),marginC:Math.round(0.25*DPI/CELL),stickers:[],pal,styleKeys};
-  const maxIn=Math.min(+$('#maxSize').value,wi*0.6);
-  const area=wi*hi/93.5; // letter = 1
-  const plan=[];
-  for(let i=0;i<Math.max(1,Math.round(2*area));i++)plan.push(rand(maxIn*0.82,maxIn));
-  for(let i=0;i<Math.round(6*area);i++)plan.push(rand(maxIn*0.55,maxIn*0.75));
-  for(let i=0;i<70;i++)plan.push(rand(Math.min(0.9,maxIn*0.3),maxIn*0.48));
-  let fails=0;
-  for(let i=0;i<plan.length&&fails<14;i++){
-    setStatus(`making sticker ${sheet.stickers.length+1}…`);await tick();
-    const st=makeSticker(plan[i],styleKeys,pal);if(!st)continue;
-    if(place(st))sheet.stickers.push(st),fails=0;else fails++;
-    if(i%3===0)render();
+  sheet={W,H,pal:PALETTES[$('#palette').value],panels:comicLayout(W,H,$('#density').value)};
+  for(let i=0;i<sheet.panels.length;i++){
+    setStatus(`panel ${i+1} of ${sheet.panels.length}…`);await tick();
+    renderPanel(sheet.panels[i]);render();
   }
-  render();
-  setStatus(`${pages.length} pages in, ${sheet.stickers.length} stickers out. Seed ${seed}.`);
+  setStatus(`${pages.length} pages in, ${sheet.panels.length} panels out. Seed ${seed}.`);
 }
-async function reroll(st){
-  const idx=sheet.stickers.indexOf(st);if(idx<0)return;
-  setStatus('rerolling…');await tick();
-  unplace(st);sheet.stickers.splice(idx,1);
-  rng=mulberry32(Date.now()&0xffffffff);
-  for(let t=0;t<6;t++){
-    const n=makeSticker(st.longIn*rand(0.9,1.05),sheet.styleKeys,sheet.pal);
-    if(n&&place(n,[st.gx,st.gy])){sheet.stickers.splice(idx,0,n);render();setStatus(`rerolled one, ${n.style}.`);return}
-  }
-  commit(st,[st.gx,st.gy]);sheet.stickers.splice(idx,0,st);render();setStatus('no room for a new one there, kept the old one.');
+async function reroll(pn){
+  setStatus('swapping…');await tick();
+  rng=mulberry32(Date.now()&0xffffffff);renderPanel(pn);render();setStatus('swapped one panel.');
 }
 
-// ---------- drawing ----------
-function drawSheet(g,{bg=true,shadow=false,cuts=false}={}){
-  const {W,H}=sheet;g.clearRect(0,0,W,H);
-  if(bg){g.fillStyle='#fff';g.fillRect(0,0,W,H)}
-  for(const st of sheet.stickers){
-    const x=st.gx*CELL,y=st.gy*CELL;
-    if(shadow){g.save();g.shadowColor='rgba(40,30,20,.28)';g.shadowBlur=14;g.shadowOffsetY=4;g.drawImage(st.canvas,x,y);g.restore()}
-    else g.drawImage(st.canvas,x,y);
-    if(cuts)g.drawImage(st.cut,x,y);
+function drawSheet(g,{cuts=false,art=true,cutOnly=false}={}){
+  const {W,H}=sheet,dark=[...sheet.pal.c].sort((a,b)=>lumHex(a)-lumHex(b))[0];g.clearRect(0,0,W,H);
+  for(const pn of sheet.panels){
+    if(!cutOnly&&pn.canvas){
+      g.save();roundRect(g,pn.x,pn.y,pn.w,pn.h,RADIUS);g.clip();g.drawImage(pn.canvas,pn.x,pn.y,pn.w,pn.h);
+      if($('#keyline').checked){g.strokeStyle=pn.ramp[0]||dark;g.lineWidth=0.05*DPI;roundRect(g,pn.x,pn.y,pn.w,pn.h,RADIUS);g.stroke();}
+      g.restore();
+    }
+    if(cuts||cutOnly){g.save();g.strokeStyle=cutOnly?'#000':'rgba(255,0,90,.85)';g.lineWidth=3;roundRect(g,pn.x,pn.y,pn.w,pn.h,RADIUS);g.stroke();g.restore();}
   }
 }
 function render(){
-  const c=$('#sheet');c.width=sheet.W;c.height=sheet.H;c.hidden=false;$('#empty').hidden=true;
-  const g=c.getContext('2d');drawSheet(g,{shadow:$('#shadow').checked,cuts:$('#cutlines').checked});
-  if(sheet.stickers.length)['#dlSheet','#dlCut'].forEach(s=>$(s).disabled=false);
+  const c=$('#sheet');if(c.width!==sheet.W||c.height!==sheet.H){c.width=sheet.W;c.height=sheet.H}c.hidden=false;$('#empty').hidden=true;
+  drawSheet(c.getContext('2d'),{cuts:$('#cutlines').checked});
+  ['#dlSheet','#dlCut'].forEach(s=>$(s).disabled=false);
 }
 function download(name,opts){
   const c=cv(sheet.W,sheet.H);drawSheet(c.getContext('2d'),opts);
@@ -578,9 +430,9 @@ function download(name,opts){
 // ---------- ui ----------
 const tick=()=>new Promise(r=>setTimeout(r,0));
 function setStatus(s){$('#status').textContent=s}
-
+function showSwatches(){$('#swatches').innerHTML=PALETTES[$('#palette').value].c.map(c=>`<span style="background:${c}"></span>`).join('')}
 for(const [k,p] of Object.entries(PALETTES)){const o=document.createElement('option');o.value=k;o.textContent=p.name;$('#palette').append(o)}
-for(const [k,s] of Object.entries(STYLES)){const l=document.createElement('label');l.innerHTML=`<input type="checkbox" id="st-${k}" ${s.on?'checked':''}> ${s.label}`;$('#styles').append(l)}
+$('#palette').value='brkw';showSwatches();
 
 async function loadFiles(files){
   const list=[...files].filter(f=>f.type.startsWith('image/'));
@@ -590,34 +442,32 @@ async function loadFiles(files){
       pages.push(analyze(img,list[i].name));}
     catch(e){console.warn('skip',list[i].name,e)}
   }
-  const small=pages.filter(p=>Math.max(p.w,p.h)<1500).length;
   $('#regen').disabled=!pages.length;
   await generate();
-  if(small)setStatus($('#status').textContent+` ${small} scans are under 1500px, so photo styles will look soft. Ink styles hide it.`);
+  const small=pages.filter(p=>Math.max(p.w,p.h)<1500).length;
+  if(small)setStatus($('#status').textContent+` ${small} scans are under 1500 px, so small type will blur. Full size photos fix it.`);
 }
 $('#drop').onclick=()=>$('#file').click();
 $('#file').onchange=e=>loadFiles(e.target.files);
 ['dragover','dragenter'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.add('over')}));
 ['dragleave','drop'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.remove('over')}));
-$('#drop').addEventListener('drop',e=>loadFiles(e.dataTransfer.files));
 document.addEventListener('dragover',e=>e.preventDefault());
-document.addEventListener('drop',e=>{e.preventDefault();if(e.target.closest('#drop'))return;loadFiles(e.dataTransfer.files)});
+document.addEventListener('drop',e=>{e.preventDefault();loadFiles(e.dataTransfer.files)});
 
-$('#regen').onclick=()=>{$('#seed').value=Math.floor(Math.random()*9999);generate()};
-['#palette','#sheetSize','#maxSize','#border','#seed'].forEach(s=>$(s).addEventListener('change',generate));
-$('#styles').addEventListener('change',generate);
-['#cutlines','#shadow'].forEach(s=>$(s).addEventListener('change',()=>sheet&&render()));
-$('#dlSheet').onclick=()=>download(`sticker-sheet-${$('#seed').value}.png`,{bg:true,cuts:false});
-$('#dlCut').onclick=()=>download(`sticker-cut-${$('#seed').value}.png`,{bg:false,cuts:false});
+$('#regen').onclick=()=>{$('#seed').value=Math.floor(Math.random()*9999);generate(true)};
+$('#palette').addEventListener('change',()=>{showSwatches();generate()});
+['#sheetSize','#density','#dots','#seed'].forEach(s=>$(s).addEventListener('change',()=>generate()));
+['#cutlines','#keyline'].forEach(s=>$(s).addEventListener('change',()=>sheet&&render()));
+$('#dlSheet').onclick=()=>download(`stickers-${$('#palette').value}-${$('#seed').value}.png`,{});
+$('#dlCut').onclick=()=>download(`cutlines-${$('#seed').value}.png`,{cutOnly:true});
 
 $('#sheet').addEventListener('click',e=>{
   if(!sheet)return;const r=e.target.getBoundingClientRect();
   const x=(e.clientX-r.left)/r.width*sheet.W,y=(e.clientY-r.top)/r.height*sheet.H;
-  for(let i=sheet.stickers.length-1;i>=0;i--){const st=sheet.stickers[i],lx=Math.floor(x-st.gx*CELL),ly=Math.floor(y-st.gy*CELL);
-    if(lx>=0&&ly>=0&&lx<st.w&&ly<st.h&&st.mask[ly*st.w+lx]){reroll(st);return}}
+  const pn=sheet.panels.find(p=>x>=p.x&&x<=p.x+p.w&&y>=p.y&&y<=p.y+p.h);if(pn)reroll(pn);
 });
 
-// debug: ?debug paints the analysis maps (red desk, blue figure, green text) for checking the classifier
+// window.__debugMaps() returns the page analysis as an image: red desk, blue figure, green text, yellow figure boxes
 window.__debugMaps=()=>{
   const n=Math.min(pages.length,12),cols=4,cw=300,c=cv(cw*cols,Math.ceil(n/cols)*cw*1.8),g=c.getContext('2d');
   pages.slice(0,n).forEach((p,i)=>{const s=cw/p.aw,ox=(i%cols)*cw,oy=Math.floor(i/cols)*cw*1.8;
@@ -625,7 +475,8 @@ window.__debugMaps=()=>{
     for(let y=0;y<im.height;y++)for(let x=0;x<im.width;x++){const j=Math.min(p.ah-1,Math.floor(y/s))*p.aw+Math.min(p.aw-1,Math.floor(x/s)),o=(y*im.width+x)*4;
       const col=p.maps.desk[j]?[255,0,0]:p.maps.fig[j]?[0,80,255]:p.maps.text[j]?[0,170,0]:null;
       if(col)for(let c2=0;c2<3;c2++)im.data[o+c2]=im.data[o+c2]*0.55+col[c2]*0.45;}
-    g.putImageData(im,ox,oy);});
+    g.putImageData(im,ox,oy);g.strokeStyle='#ffd400';g.lineWidth=2;
+    for(const f of p.figs)g.strokeRect(ox+f.x*s,oy+f.y*s,f.w*s,f.h*s);});
   return c.toDataURL('image/jpeg',0.8);
 };
 </script>
