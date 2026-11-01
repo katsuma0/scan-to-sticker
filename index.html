@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scan to Sticker</title>
+<style>
+:root{
+  --bg:#ebe6db; --panel:#f7f3ea; --ink:#1d1c1a; --muted:#6c665b; --line:#d5cdbd; --accent:#c8352a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  display:grid;grid-template-columns:290px 1fr;min-height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:18px 16px;display:flex;flex-direction:column;gap:16px;
+  position:sticky;top:0;height:100vh;overflow:auto}
+h1{font-size:17px;margin:0;letter-spacing:.01em}
+h1 small{display:block;font-weight:400;color:var(--muted);font-size:12.5px;margin-top:2px}
+label.k{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
+#drop{border:1.5px dashed var(--line);border-radius:8px;padding:16px 12px;text-align:center;color:var(--muted);cursor:pointer;background:#fff8}
+#drop.over{border-color:var(--accent);color:var(--ink)}
+#drop b{color:var(--ink)}
+select,input[type=number]{width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;font:inherit}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}
+.checks label{display:flex;gap:6px;align-items:center;font-size:13px}
+button{font:inherit;padding:9px 10px;border-radius:6px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink)}
+button:disabled{opacity:.4;cursor:default}
+.hint{font-size:12.5px;color:var(--muted)}
+#status{font-size:12.5px;color:var(--muted);min-height:1.4em}
+main{padding:24px;display:flex;justify-content:center;align-items:flex-start;overflow:auto}
+#wrap{width:min(100%,860px)}
+#sheet{display:block;width:100%;height:auto;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08),0 8px 28px rgba(0,0,0,.12);cursor:pointer}
+#empty{padding:80px 20px;text-align:center;color:var(--muted)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:2px;vertical-align:-1px}
+@media (max-width:760px){
+  body{grid-template-columns:1fr}
+  aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
+  main{padding:16px}
+}
+</style>
+</head>
+<body>
+<aside>
+  <h1>scan to sticker<small>Book scans in, sticker sheet out.</small></h1>
+
+  <div>
+    <label class="k">Scans</label>
+    <div id="drop"><b>Drop page photos here</b><br>or click to pick. JPG or PNG.</div>
+    <input id="file" type="file" accept="image/*" multiple hidden>
+  </div>
+
+  <div>
+    <label class="k">Inks</label>
+    <select id="palette"></select>
+  </div>
+
+  <div>
+    <label class="k">Styles</label>
+    <div class="checks" id="styles"></div>
+  </div>
+
+  <div class="row">
+    <div><label class="k">Sheet</label>
+      <select id="sheetSize">
+        <option value="letter">Letter 8.5×11</option>
+        <option value="half">Half 5.5×8.5</option>
+        <option value="4x6">4×6</option>
+        <option value="a4">A4</option>
+      </select></div>
+    <div><label class="k">Seed</label><input id="seed" type="number" value="763"></div>
+  </div>
+
+  <div class="row">
+    <div><label class="k">Biggest</label>
+      <select id="maxSize">
+        <option value="2.5">2.5 in</option>
+        <option value="3.2" selected>3.2 in</option>
+        <option value="4">4 in</option>
+      </select></div>
+    <div><label class="k">Border</label>
+      <select id="border">
+        <option value="0.04">thin</option>
+        <option value="0.07" selected>normal</option>
+        <option value="0.11">fat</option>
+      </select></div>
+  </div>
+
+  <div class="checks">
+    <label><input type="checkbox" id="cutlines" checked> cut lines</label>
+    <label><input type="checkbox" id="shadow" checked> shadows</label>
+  </div>
+
+  <button id="regen" disabled>New sheet</button>
+  <div class="hint">Click any sticker on the sheet to reroll just that one.</div>
+
+  <div class="row">
+    <button class="ghost" id="dlSheet" disabled>Sheet PNG</button>
+    <button class="ghost" id="dlCut" disabled>Cut PNG</button>
+  </div>
+  <div class="hint">Sheet PNG is for printing on a full sticker sheet. Cut PNG has a transparent background, for Cricut print then cut.</div>
+
+  <div id="status"></div>
+</aside>
+
+<main>
+  <div id="wrap">
+    <canvas id="sheet" hidden></canvas>
+    <div id="empty">Nothing here yet. Drop some scanned pages on the left.</div>
+  </div>
+</main>
+
+<script>
+'use strict';
+// Everything renders at print resolution so the sheet PNG is ready for a printer as-is.
+const DPI = 300;
+
+const PALETTES = {
+  indigo:     {name:'indigo + vermilion',     a:'#c8352a', b:'#26386f', paper:'#f2ead8', dark:'#2b2721'},
+  dictionary: {name:'dictionary red + blue',  a:'#cf2534', b:'#203d91', paper:'#efe6d1', dark:'#272320'},
+  riso:       {name:'riso pink + teal',       a:'#ff4a86', b:'#0d7c85', paper:'#f6f1e6', dark:'#2a2a2a'},
+  sumi:       {name:'sumi + vermilion',       a:'#d8432f', b:'#1d1c1b', paper:'#f1ebde', dark:'#1d1c1b'},
+  moss:       {name:'moss + rust',            a:'#b4532a', b:'#3c5a3a', paper:'#efe8d6', dark:'#2a2a22'},
+};
+
+const STYLES = {
+  overprint: {label:'overprint', on:true},
+  clip:      {label:'page clip', on:true},
+  stamp:     {label:'stamp',     on:true},
+  cutout:    {label:'cutout',    on:true},
+  snip:      {label:'text snip', on:true},
+  duotone:   {label:'duotone',   on:true},
+};
+
+const SHEETS = {letter:[8.5,11], half:[5.5,8.5], '4x6':[4,6], a4:[8.27,11.69]};
+
+// ---------- small helpers ----------
+const $ = s => document.querySelector(s);
+function cv(w,h){const c=document.createElement('canvas');c.width=Math.max(1,Math.round(w));c.height=Math.max(1,Math.round(h));return c}
+function cx(c){return c.getContext('2d',{willReadFrequently:true})}
+function hex(h){const n=parseInt(h.slice(1),16);return [n>>16&255,n>>8&255,n&255]}
+const clamp=(v,a=0,b=1)=>v<a?a:v>b?b:v;
+const smooth=(a,b,v)=>{const t=clamp((v-a)/(b-a));return t*t*(3-2*t)};
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+let rng = mulberry32(1);
+const rand=(a=0,b=1)=>a+(b-a)*rng();
+const pick=arr=>arr[Math.floor(rng()*arr.length)];
+const chance=p=>rng()<p;
+
+function makeNoise(seed){
+  const h=(x,y)=>{let n=Math.imul(x,374761393)+Math.imul(y,668265263)+Math.imul(seed,1442695041);n=Math.imul(n^(n>>>13),1274126177);n^=n>>>16;return (n>>>0)/4294967296};
+  return (x,y)=>{const xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi,u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+    const a=h(xi,yi),b=h(xi+1,yi),c=h(xi,yi+1),d=h(xi+1,yi+1);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v};
+}
+const newNoise=()=>makeNoise(Math.floor(rng()*1e9));
+
+function boxBlur(src,w,h,r){
+  const tmp=new Float32Array(w*h), out=new Float32Array(w*h), n=2*r+1;
+  for(let y=0;y<h;y++){const o=y*w;let s=0;
+    for(let i=-r;i<=r;i++)s+=src[o+clamp(i,0,w-1)];
+    for(let x=0;x<w;x++){tmp[o+x]=s/n;s+=src[o+Math.min(w-1,x+r+1)]-src[o+Math.max(0,x-r)];}}
+  for(let x=0;x<w;x++){let s=0;
+    for(let i=-r;i<=r;i++)s+=tmp[clamp(i,0,h-1)*w+x];
+    for(let y=0;y<h;y++){out[y*w+x]=s/n;s+=tmp[Math.min(h-1,y+r+1)*w+x]-tmp[Math.max(0,y-r)*w+x];}}
+  return out;
+}
+function integral(m,w,h){
+  const I=new Float64Array((w+1)*(h+1));
+  for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){row+=m[y*w+x];I[(y+1)*(w+1)+x+1]=I[y*(w+1)+x+1]+row;}}
+  return I;
+}
+function rectMean(I,w,x0,y0,x1,y1){
+  const W=w+1;return (I[y1*W+x1]-I[y0*W+x1]-I[y1*W+x0]+I[y0*W+x0])/Math.max(1,(x1-x0)*(y1-y0));
+}
+function lumOf(d){const n=d.length/4,L=new Float32Array(n);for(let i=0;i<n;i++)L[i]=(0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2])/255;return L}
+function percentile(arr,p){const step=Math.max(1,Math.floor(arr.length/4000)),s=[];for(let i=0;i<arr.length;i+=step)s.push(arr[i]);s.sort((a,b)=>a-b);return s[Math.floor(clamp(p)*(s.length-1))]}
+function otsu(L){
+  const hist=new Float64Array(64);for(let i=0;i<L.length;i++)hist[Math.min(63,Math.floor(L[i]*64))]++;
+  let sum=0;for(let i=0;i<64;i++)sum+=i*hist[i];
+  let sB=0,wB=0,best=0,t=32;
+  for(let i=0;i<64;i++){wB+=hist[i];if(!wB)continue;const wF=L.length-wB;if(!wF)break;sB+=i*hist[i];
+    const mB=sB/wB,mF=(sum-sB)/wF,v=wB*wF*(mB-mF)*(mB-mF);if(v>best){best=v;t=i}}
+  return (t+0.5)/64;
+}
+
+// ---------- page analysis ----------
+// Each photo gets a coarse map of where the desk, the figures, the body text and the blank paper are,
+// so random crops can ask for "mostly picture" or "mostly text" instead of landing on the tabletop.
+const pages = [];
+
+function analyze(img,name){
+  const w=img.naturalWidth,h=img.naturalHeight;
+  const full=cv(w,h);full.getContext('2d').drawImage(img,0,0);
+  const k=Math.min(1,420/Math.max(w,h)),aw=Math.round(w*k),ah=Math.round(h*k),N=aw*ah;
+  const a=cv(aw,ah),g=cx(a);g.drawImage(img,0,0,aw,ah);
+  const d=g.getImageData(0,0,aw,ah).data;
+  const L=new Float32Array(N),S=new Float32Array(N);
+  for(let i=0;i<N;i++){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2],mx=Math.max(r,gg,b),mn=Math.min(r,gg,b);
+    L[i]=(0.299*r+0.587*gg+0.114*b)/255;S[i]=mx?(mx-mn)/mx:0;}
+
+  // Desk = whatever colour dominates the photo's outer edge, flood filled inward.
+  const ring=[[],[],[]];
+  for(let x=0;x<aw;x++)for(const y of [0,1,ah-2,ah-1]){const i=(y*aw+x)*4;ring[0].push(d[i]);ring[1].push(d[i+1]);ring[2].push(d[i+2]);}
+  for(let y=0;y<ah;y++)for(const x of [0,1,aw-2,aw-1]){const i=(y*aw+x)*4;ring[0].push(d[i]);ring[1].push(d[i+1]);ring[2].push(d[i+2]);}
+  const med=ring.map(c=>c.sort((p,q)=>p-q)[c.length>>1]);
+  // Compare chromaticity, not raw RGB: the desk is one colour but lit unevenly across the photo.
+  const ms=med[0]+med[1]+med[2]+1,mr=med[0]/ms,mg=med[1]/ms,mL=ms/765,mS=(Math.max(...med)-Math.min(...med))/(Math.max(...med)||1);
+  const near=i=>{const r=d[i*4],gg=d[i*4+1],b=d[i*4+2],t=r+gg+b+1,dr=r/t-mr,dg=gg/t-mg,l=t/765;
+    return dr*dr+dg*dg<0.03*0.03&&l>mL*0.45&&l<Math.min(0.97,mL*1.5)&&Math.abs(S[i]-mS)<0.16};
+  const desk0=new Float32Array(N),q=new Int32Array(N);let qh=0,qt=0;
+  const push=i=>{if(!desk0[i]&&near(i)){desk0[i]=1;q[qt++]=i}};
+  for(let x=0;x<aw;x++){push(x);push((ah-1)*aw+x)}
+  for(let y=0;y<ah;y++){push(y*aw);push(y*aw+aw-1)}
+  // no flood inward: dark photos share the desk's hue and the fill leaks into them
+  // Desk colour alone misses shadows under the book, so also treat everything outside the
+  // bounding box of the paper-white pixels as desk. Pages here sit roughly square to the camera.
+  const hiL=percentile(L,0.92),colC=new Float32Array(aw),rowC=new Float32Array(ah);
+  for(let i=0;i<N;i++)if(S[i]<0.2&&L[i]>hiL*0.8){colC[i%aw]++;rowC[(i/aw)|0]++;}
+  const span=(arr)=>{const mx=Math.max(...arr),th=mx*0.15;let a=0,b=arr.length-1;while(a<b&&arr[a]<th)a++;while(b>a&&arr[b]<th)b--;return [a,b]};
+  const [bx0,bx1]=span(colC),[by0,by1]=span(rowC);
+  for(let i=0;i<N;i++){const x=i%aw,y=(i/aw)|0;if(x<bx0||x>bx1||y<by0||y>by1)desk0[i]=1;}
+  const deskB=boxBlur(desk0,aw,ah,7);
+
+  const Lb=boxBlur(L,aw,ah,2),L2=new Float32Array(N);for(let i=0;i<N;i++)L2[i]=L[i]*L[i];
+  const L2b=boxBlur(L2,aw,ah,2),Sb=boxBlur(S,aw,ah,2);
+  const pageWhite=percentile(Lb.filter((_,i)=>!desk0[i]),0.9)||0.85;
+
+  const desk=new Float32Array(N),fig=new Float32Array(N),text=new Float32Array(N),white=new Float32Array(N);
+  for(let i=0;i<N;i++){
+    if(deskB[i]>0.02){desk[i]=1;continue}
+    const sd=Math.sqrt(Math.max(0,L2b[i]-Lb[i]*Lb[i])),rel=Lb[i]/pageWhite;
+    const paperish=Sb[i]<0.2&&rel>0.72;
+    if(paperish){ if(sd<0.03&&rel>0.9) white[i]=1; else text[i]=1; }
+    else fig[i]=1;
+  }
+  // Text is a fine texture; smooth the maps so a crop is judged on the area, not single pixels.
+  const p={name,full,w,h,aw,ah,k,
+    desk:integral(desk,aw,ah),fig:integral(boxBlur(fig,aw,ah,3),aw,ah),
+    text:integral(boxBlur(text,aw,ah,3),aw,ah),white:integral(white,aw,ah),
+    lum:integral(L,aw,ah),lum2:integral(L2,aw,ah),
+    maps:{desk,fig,text,white}};
+  p.figShare=rectMean(p.fig,aw,0,0,aw,ah);p.textShare=rectMean(p.text,aw,0,0,aw,ah);
+  return p;
+}
+
+// ---------- region picking ----------
+let used=[];
+function iou(a,b){
+  if(a.page!==b.page)return 0;
+  const x0=Math.max(a.x,b.x),y0=Math.max(a.y,b.y),x1=Math.min(a.x+a.w,b.x+b.w),y1=Math.min(a.y+a.h,b.y+b.h);
+  const i=Math.max(0,x1-x0)*Math.max(0,y1-y0);return i/(a.w*a.h+b.w*b.h-i);
+}
+const RULES={
+  fig:  {size:[0.14,0.55], ok:f=>f.fig>0.72&&f.desk<0.005&&f.sd>0.15},
+  text: {size:[0.12,0.45], ok:f=>f.text>0.6&&f.fig<0.04&&f.desk<0.005},
+  mixed:{size:[0.28,0.7],  ok:f=>f.fig>0.15&&f.fig<0.6&&f.text>0.12&&f.text+f.white>0.35&&f.desk<0.005&&f.sd>0.14},
+};
+function pickRegion(kind,aspect){
+  const rule=RULES[kind];
+  const pool=pages.filter(p=>kind==='text'?p.textShare>0.05:p.figShare>0.05);
+  if(!pool.length)return null;
+  for(let t=0;t<500;t++){
+    const p=pick(pool),s=rand(...rule.size)*Math.min(p.aw,p.ah);
+    let w=s*Math.sqrt(aspect),h=s/Math.sqrt(aspect);
+    if(w>p.aw*0.95||h>p.ah*0.95||w<14||h<14)continue;
+    const x=rand(0,p.aw-w),y=rand(0,p.ah-h);
+    const x0=Math.floor(x),y0=Math.floor(y),x1=Math.ceil(x+w),y1=Math.ceil(y+h);
+    const f={desk:rectMean(p.desk,p.aw,x0,y0,x1,y1),fig:rectMean(p.fig,p.aw,x0,y0,x1,y1),
+             text:rectMean(p.text,p.aw,x0,y0,x1,y1),white:rectMean(p.white,p.aw,x0,y0,x1,y1)};
+    const m=rectMean(p.lum,p.aw,x0,y0,x1,y1);f.sd=Math.sqrt(Math.max(0,rectMean(p.lum2,p.aw,x0,y0,x1,y1)-m*m));
+    if(!rule.ok(f))continue;
+    const r={page:p,x:x/p.k,y:y/p.k,w:w/p.k,h:h/p.k};
+    if(t<400&&used.some(u=>iou(u,r)>0.2))continue;
+    used.push(r);return r;
+  }
+  return null;
+}
+function crop(r,W,H){
+  const c=cv(W,H),g=c.getContext('2d');g.imageSmoothingQuality='high';
+  g.drawImage(r.page.full,r.x,r.y,r.w,r.h,0,0,c.width,c.height);return c;
+}
+
+// ---------- ink + paper treatments ----------
+// Turn a photo crop into one flat ink layer: hard threshold, grainy edges, and the blotchy
+// under-inked patches you get from a hand-pressed block.
+function toInk(src,color,o={}){
+  const W=src.width,H=src.height,g=cx(src),img=g.getImageData(0,0,W,H),d=img.data,L=lumOf(d);
+  levels(L,percentile(L,0.02),percentile(L,0.98));
+  let t=otsu(L)+(o.bias??rand(-0.04,0.06));
+  let cover=0;for(let i=0;i<L.length;i+=7)cover+=L[i]<t;cover/=L.length/7;
+  const inv=o.invert??(cover>0.78);
+  const n1=newNoise(),n2=newNoise(),n3=newNoise(),[r,gg,b]=hex(color);
+  const sc=Math.min(W,H),edge=o.edge??0,grain=o.grain??1,mott=o.mottle??0.55;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=y*W+x,l=inv?1-L[i]:L[i];
+    let v=smooth(-0.5,0.5,(t-l)*(inv?-1:1)*9+(n2(x/1.6,y/1.6)-0.5)*0.9*grain+(n1(x/9,y/9)-0.5)*0.5*grain);
+    v*=1-clamp((n3(x/(sc*0.12),y/(sc*0.12))-0.64)*2.4)*mott;
+    if(edge){const e=Math.min(x,y,W-1-x,H-1-y)+(n1(x/5+40,y/5)-0.5)*edge*1.6+(n2(x/40,y/40)-0.5)*edge;
+      v*=clamp((e-edge*0.3)/1.5);}
+    d[i*4]=r;d[i*4+1]=gg;d[i*4+2]=b;d[i*4+3]=v*255*(o.alpha??0.94);
+  }
+  const out=cv(W,H);cx(out).putImageData(img,0,0);out.cover=inv?1-cover:cover;return out;
+}
+function levels(L,lo,hi){for(let i=0;i<L.length;i++)L[i]=clamp((L[i]-lo)/Math.max(0.05,hi-lo));return L}
+// Text crops become old-paper print: page white maps to the paper tone, type maps to warm near-black.
+function paperText(src,pal,fade=0){
+  const W=src.width,H=src.height,img=cx(src).getImageData(0,0,W,H),d=img.data,L=lumOf(d);
+  levels(L,percentile(L,0.03),percentile(L,0.95));
+  const P=hex(pal.paper),D=hex(pal.dark);
+  for(let i=0;i<L.length;i++){const v=clamp(smooth(0.15,0.85,L[i])+fade);
+    for(let c=0;c<3;c++)d[i*4+c]=D[c]+(P[c]-D[c])*v;d[i*4+3]=255;}
+  const out=cv(W,H);cx(out).putImageData(img,0,0);return out;
+}
+// Photo crops keep their colour but get the page white pushed to paper and a little less saturation.
+function warm(src,pal){
+  const W=src.width,H=src.height,img=cx(src).getImageData(0,0,W,H),d=img.data,L=lumOf(d);
+  const hi=percentile(L,0.97),P=hex(pal.paper);
+  for(let i=0;i<L.length;i++){const l=L[i]*255;
+    for(let c=0;c<3;c++){let v=d[i*4+c]*0.82+l*0.18;v=clamp(v/(hi*255))*P[c];d[i*4+c]=v}}
+  const out=cv(W,H);cx(out).putImageData(img,0,0);return out;
+}
+function duotone(src,dark,light){
+  const W=src.width,H=src.height,img=cx(src).getImageData(0,0,W,H),d=img.data,L=lumOf(d);
+  levels(L,percentile(L,0.02),percentile(L,0.98));
+  const A=hex(dark),B=hex(light),n=newNoise();
+  for(let i=0;i<L.length;i++){const x=i%W,y=(i/W)|0,v=clamp(L[i]+(n(x/1.5,y/1.5)-0.5)*0.12);
+    for(let c=0;c<3;c++)d[i*4+c]=A[c]+(B[c]-A[c])*v;d[i*4+3]=255;}
+  const out=cv(W,H);cx(out).putImageData(img,0,0);return out;
+}
+// Multiply an alpha mask with rough, torn-looking edges into a canvas.
+function roughen(c,amp,sides='tblr'){
+  const W=c.width,H=c.height,img=cx(c).getImageData(0,0,W,H),d=img.data,n=newNoise(),m=newNoise();
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    let e=1e9;
+    if(sides.includes('t'))e=Math.min(e,y);if(sides.includes('b'))e=Math.min(e,H-1-y);
+    if(sides.includes('l'))e=Math.min(e,x);if(sides.includes('r'))e=Math.min(e,W-1-x);
+    const j=(n(x/(amp*1.2),y/(amp*1.2))-0.5)*amp*1.6+(m(x/3,y/3)-0.5)*amp*0.35;
+    const a=clamp((e-amp*0.9+j)/1.2);d[(y*W+x)*4+3]*=a;
+  }
+  cx(c).putImageData(img,0,0);return c;
+}
+function multiply(g,layer,x,y){g.save();g.globalCompositeOperation='multiply';g.drawImage(layer,x,y);g.restore()}
+// Retry until the ink covers a sensible share of the block; flat crops give a solid slab or nothing.
+function inkBlock(kind,W,H,color,o){
+  for(let t=0;t<5;t++){const r=pickRegion(kind,W/H);if(!r)return null;
+    const ink=toInk(crop(r,W,H),color,o);if(ink.cover>0.18&&ink.cover<0.68)return ink;}
+  return null;
+}
+
+// ---------- sticker styles ----------
+// Each returns {art, shape}. art is a canvas with transparent outside the sticker shape.
+function dims(px,aspect){return aspect>=1?[px,px/aspect]:[px*aspect,px]}
+const BUILD = {
+  // The reference look: an old text page with two misregistered block prints pressed over it.
+  overprint(px,pal){
+    const [W,H]=dims(px,rand(0.72,1.35)),art=cv(W,H),g=cx(art);
+    g.fillStyle=pal.paper;g.fillRect(0,0,W,H);
+    const tr=pickRegion('text',W/H);if(tr)g.drawImage(paperText(crop(tr,W,H),pal,0.08),0,0);
+    const flip=chance(0.5),first=flip?pal.a:pal.b,second=flip?pal.b:pal.a;
+    const bw=W*rand(0.62,0.9),bh=H*rand(0.5,0.72),edge=Math.min(W,H)*0.025;
+    const A=inkBlock('fig',bw,bh,first,{edge});if(!A)return null;
+    const ax=chance(0.5)?W*rand(0.03,0.08):W-bw-W*rand(0.03,0.08),ay=H*rand(0.25,0.45)-bh*0.3;
+    multiply(g,A,ax,clamp(ay,H*0.03,H-bh-H*0.03));
+    const cw=W*rand(0.38,0.55),ch=H*rand(0.3,0.45);
+    const B=inkBlock(chance(0.5)?'fig':'mixed',cw,ch,second,{edge});
+    if(B){const bx=ax<W/2?W-cw-W*rand(0.03,0.1):W*rand(0.03,0.1);
+      multiply(g,B,bx,chance(0.5)?H*rand(0.03,0.08):H-ch-H*rand(0.03,0.08));}
+    if(chance(0.6)){const C=inkBlock('fig',cw*0.8,ch*0.9,second,{edge});
+      if(C)multiply(g,C,ax<W/2?W*rand(0.02,0.1):W-cw*0.8-W*rand(0.02,0.1),H-ch*0.9-H*rand(0.02,0.06));}
+    return {art,shape:'rect'};
+  },
+  // A straight cut of the page: figure, a bit of text, and the white around it.
+  clip(px,pal){
+    const [W,H]=dims(px,rand(0.7,1.4)),r=pickRegion('mixed',W/H);if(!r)return null;
+    const art=cv(W,H),g=cx(art);g.drawImage(warm(crop(r,W,H),pal),0,0);
+    if(chance(0.45)){const s=Math.min(W,H)*rand(0.28,0.42),A=inkBlock('fig',s,s,chance(0.5)?pal.a:pal.b,{edge:s*0.03,alpha:0.85});
+      if(A)multiply(g,A,chance(0.5)?W*0.06:W-s-W*0.06,chance(0.5)?H*0.06:H-s-H*0.06);}
+    return {art,shape:'rect'};
+  },
+  // Round stamp: one ink, figure inside a ring.
+  stamp(px,pal){
+    const W=px,art=cv(W,W),g=cx(art),col=chance(0.55)?pal.a:pal.b;
+    g.fillStyle=pal.paper;g.beginPath();g.arc(W/2,W/2,W/2,0,7);g.fill();
+    const A=inkBlock('fig',W,W,col,{mottle:0.4});if(!A)return null;
+    g.save();g.beginPath();g.arc(W/2,W/2,W*0.42,0,7);g.clip();multiply(g,A,0,0);g.restore();
+    const ring=cv(W,W),rg=ring.getContext('2d');rg.strokeStyle=col;rg.lineWidth=W*0.035;
+    rg.beginPath();rg.arc(W/2,W/2,W*0.455,0,7);rg.stroke();
+    multiply(g,toInkRing(ring),0,0);
+    return {art,shape:'circle'};
+  },
+  // Just the ink, die cut around its own silhouette.
+  cutout(px,pal){
+    const [W,H]=dims(px,rand(0.75,1.3)),r=pickRegion('fig',W/H);if(!r)return null;
+    const src=crop(r,W,H),art=cv(W,H),g=cx(art),off=Math.min(W,H)*0.018;
+    const two=chance(0.6),main=chance(0.5)?pal.a:pal.b,other=main===pal.a?pal.b:pal.a;
+    const A=toInk(src,main,{mottle:0.35,bias:0.02});
+    // a cutout of a dark photo is just a slab; a cutout of almost nothing is confetti
+    if(A.cover<0.2||A.cover>0.6)return null;
+    if(two){const B=toInk(crop(r,W,H),other,{mottle:0.5,bias:-0.06,alpha:0.9});g.drawImage(B,off,off);multiply(g,A,0,0);}
+    else g.drawImage(A,0,0);
+    return {art,shape:'blob'};
+  },
+  // Torn strip of body text, sometimes with a small ink mark.
+  snip(px,pal){
+    const [W,H]=dims(px,rand(1.9,3.2)),r=pickRegion('text',W/H);if(!r)return null;
+    const art=paperText(crop(r,W,H),pal),g=cx(art);
+    if(chance(0.6)){const s=H*rand(0.55,0.8),A=inkBlock('fig',s,s,chance(0.5)?pal.a:pal.b,{edge:s*0.04});
+      if(A)multiply(g,A,chance(0.5)?W*0.05:W-s-W*0.05,(H-s)/2);}
+    roughen(art,Math.min(W,H)*0.05,chance(0.5)?'tb':'tblr');
+    return {art,shape:'blob'};
+  },
+  // Photo printed in one ink on paper, with an offset second-colour block.
+  duotone(px,pal){
+    const [W,H]=dims(px,rand(0.7,1.3)),r=pickRegion('fig',W/H);if(!r)return null;
+    const art=cv(W,H),g=cx(art),useB=chance(0.6);
+    g.drawImage(duotone(crop(r,W,H),useB?pal.b:pal.a,pal.paper),0,0);
+    if(chance(0.5)){const s=Math.min(W,H)*rand(0.3,0.45),A=inkBlock('fig',s,s*rand(0.7,1.2),useB?pal.a:pal.b,{edge:s*0.03,alpha:0.8});
+      if(A)multiply(g,A,rand(0.05,0.55)*W,rand(0.05,0.55)*H);}
+    return {art,shape:'rect'};
+  },
+};
+function toInkRing(c){ // give the stamp ring the same worn texture as the ink
+  const W=c.width,H=c.height,img=cx(c).getImageData(0,0,W,H),d=img.data,n=newNoise(),m=newNoise();
+  for(let i=0;i<W*H;i++){const x=i%W,y=(i/W)|0;d[i*4+3]*=clamp(1-(n(x/30,y/30)-0.6)*2.5)*(0.75+0.25*m(x/2,y/2));}
+  cx(c).putImageData(img,0,0);return c;
+}
+
+// ---------- die cut ----------
+// White border = the art's silhouette, holes filled, grown by the border width with a blur+threshold.
+function dieCut(art,borderPx){
+  const pad=Math.ceil(borderPx*2.2)+4,W=art.width+pad*2,H=art.height+pad*2;
+  const tmp=cv(W,H),tg=cx(tmp);tg.drawImage(art,pad,pad);
+  const ad=tg.getImageData(0,0,W,H).data,M=new Float32Array(W*H);
+  for(let i=0;i<W*H;i++)M[i]=ad[i*4+3]>60?1:0;
+  const r=Math.max(1,Math.round(borderPx/1.75));
+  let D=boxBlur(boxBlur(boxBlur(M,W,H,r),W,H,r),W,H,r);
+  const mask=new Uint8Array(W*H);for(let i=0;i<W*H;i++)mask[i]=D[i]>0.04?1:0;
+  // fill holes so the cutter only follows the outside edge
+  const out=new Uint8Array(W*H),q=new Int32Array(W*H);let qh=0,qt=0;
+  const push=i=>{if(!mask[i]&&!out[i]){out[i]=1;q[qt++]=i}};
+  for(let x=0;x<W;x++){push(x);push((H-1)*W+x)}for(let y=0;y<H;y++){push(y*W);push(y*W+W-1)}
+  while(qh<qt){const i=q[qh++],x=i%W,y=(i/W)|0;if(x>0)push(i-1);if(x<W-1)push(i+1);if(y>0)push(i-W);if(y<H-1)push(i+W);}
+  for(let i=0;i<W*H;i++)mask[i]=out[i]?0:1;
+  // trim to bounds
+  let x0=W,y0=H,x1=0,y1=0;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(mask[y*W+x]){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+  const cw=x1-x0+1,ch=y1-y0+1,c=cv(cw,ch),g=cx(c),img=g.createImageData(cw,ch),cut=cv(cw,ch),cg=cx(cut),ci=cg.createImageData(cw,ch);
+  const m2=new Uint8Array(cw*ch);
+  for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const s=(y+y0)*W+x+x0,o=y*cw+x;m2[o]=mask[s];
+    if(mask[s]){img.data[o*4]=img.data[o*4+1]=img.data[o*4+2]=255;img.data[o*4+3]=255;}}
+  for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const o=y*cw+x;if(!m2[o])continue;
+    if(x===0||y===0||x===cw-1||y===ch-1||!m2[o-1]||!m2[o+1]||!m2[o-cw]||!m2[o+cw]){ci.data[o*4]=ci.data[o*4+1]=ci.data[o*4+2]=110;ci.data[o*4+3]=255;}}
+  g.putImageData(img,0,0);g.globalCompositeOperation='source-atop';g.drawImage(art,pad-x0,pad-y0);g.globalCompositeOperation='source-over';cg.putImageData(ci,0,0);
+  return {canvas:c,cut,mask:m2,w:cw,h:ch};
+}
+
+// ---------- sheet packing ----------
+const CELL=10; // occupancy grid cell, in print pixels (1/30 in)
+let sheet=null;
+
+function makeSticker(longIn,styleKeys,pal){
+  for(let t=0;t<8;t++){
+    const style=pick(styleKeys);
+    // styles that look silly huge or tiny get nudged
+    let s=longIn;if(style==='stamp')s=Math.min(s,2.2);if(style==='snip')s=Math.max(s,1.6);
+    const res=BUILD[style](s*DPI,pal);
+    if(!res)continue;
+    if(res.art.width<0.45*DPI||res.art.height<0.45*DPI)continue;
+    const dc=dieCut(res.art,+$('#border').value*DPI*(res.shape==='blob'?1.4:1));
+    if(dc.w<0.5*DPI||dc.h<0.5*DPI)continue;
+    return {...dc,style,longIn};
+  }
+  return null;
+}
+function stickerCells(st,gap){
+  const gw=Math.ceil(st.w/CELL),gh=Math.ceil(st.h/CELL),m=new Uint8Array(gw*gh);
+  for(let y=0;y<st.h;y++)for(let x=0;x<st.w;x++)if(st.mask[y*st.w+x])m[((y/CELL)|0)*gw+((x/CELL)|0)]=1;
+  const cells=[];
+  for(let y=-gap;y<gh+gap;y++)for(let x=-gap;x<gw+gap;x++){
+    let hit=false;
+    for(let dy=-gap;dy<=gap&&!hit;dy++)for(let dx=-gap;dx<=gap&&!hit;dx++){
+      if(dx*dx+dy*dy>gap*gap)continue;const xx=x+dx,yy=y+dy;
+      if(xx>=0&&yy>=0&&xx<gw&&yy<gh&&m[yy*gw+xx])hit=true;}
+    if(hit)cells.push(x,y);
+  }
+  return {gw,gh,cells};
+}
+function fits(grid,gw,gh,cells,cx0,cy0){
+  for(let i=0;i<cells.length;i+=2){const x=cells[i]+cx0,y=cells[i+1]+cy0;
+    if(x<0||y<0||x>=gw||y>=gh)continue; if(grid[y*gw+x])return false;}
+  return true;
+}
+function place(st,prefer){
+  const {grid,gw,gh,marginC}=sheet;
+  const sc=st.cells||(st.cells=stickerCells(st,3));
+  const maxX=gw-marginC-sc.gw,maxY=gh-marginC-sc.gh;if(maxX<marginC||maxY<marginC)return false;
+  let best=null,bs=1e9;
+  const tryAt=(x,y)=>{if(!fits(grid,gw,gh,sc.cells,x,y))return;const s=y+x*0.45+rand(0,4);if(s<bs){bs=s;best=[x,y]}};
+  if(prefer){for(let dy=-6;dy<=6;dy+=2)for(let dx=-6;dx<=6;dx+=2){const x=clamp(prefer[0]+dx,marginC,maxX),y=clamp(prefer[1]+dy,marginC,maxY);
+    if(fits(grid,gw,gh,sc.cells,x,y)){best=[x,y];break}} if(best)return commit(st,best);}
+  for(let t=0;t<3000;t++)tryAt(marginC+Math.floor(rand()*(maxX-marginC+1)),marginC+Math.floor(rand()*(maxY-marginC+1)));
+  if(!best)return false;
+  return commit(st,best);
+}
+function commit(st,[x,y]){
+  const {grid,gw}=sheet;st.gx=x;st.gy=y;
+  for(let i=0;i<st.cells.cells.length;i+=2){const xx=st.cells.cells[i]+x,yy=st.cells.cells[i+1]+y;
+    if(xx>=0&&yy>=0&&xx<gw&&yy<sheet.gh)grid[yy*gw+xx]=1;}
+  return true;
+}
+function unplace(st){
+  const {grid,gw,gh}=sheet;
+  for(let i=0;i<st.cells.cells.length;i+=2){const xx=st.cells.cells[i]+st.gx,yy=st.cells.cells[i+1]+st.gy;
+    if(xx>=0&&yy>=0&&xx<gw&&yy<gh)grid[yy*gw+xx]=0;}
+  // re-stamp the others in case gaps overlapped
+  for(const o of sheet.stickers)if(o!==st)commit(o,[o.gx,o.gy]);
+}
+
+async function generate(){
+  if(!pages.length)return;
+  const seed=+$('#seed').value||1;rng=mulberry32(seed);used=[];
+  const pal=PALETTES[$('#palette').value];
+  const styleKeys=Object.keys(STYLES).filter(k=>$('#st-'+k).checked);if(!styleKeys.length)return;
+  const [wi,hi]=SHEETS[$('#sheetSize').value],W=Math.round(wi*DPI),H=Math.round(hi*DPI);
+  const gw=Math.ceil(W/CELL),gh=Math.ceil(H/CELL);
+  sheet={W,H,gw,gh,grid:new Uint8Array(gw*gh),marginC:Math.round(0.25*DPI/CELL),stickers:[],pal,styleKeys};
+  const maxIn=Math.min(+$('#maxSize').value,wi*0.6);
+  const area=wi*hi/93.5; // letter = 1
+  const plan=[];
+  for(let i=0;i<Math.max(1,Math.round(2*area));i++)plan.push(rand(maxIn*0.82,maxIn));
+  for(let i=0;i<Math.round(6*area);i++)plan.push(rand(maxIn*0.55,maxIn*0.75));
+  for(let i=0;i<70;i++)plan.push(rand(Math.min(0.9,maxIn*0.3),maxIn*0.48));
+  let fails=0;
+  for(let i=0;i<plan.length&&fails<14;i++){
+    setStatus(`making sticker ${sheet.stickers.length+1}…`);await tick();
+    const st=makeSticker(plan[i],styleKeys,pal);if(!st)continue;
+    if(place(st))sheet.stickers.push(st),fails=0;else fails++;
+    if(i%3===0)render();
+  }
+  render();
+  setStatus(`${pages.length} pages in, ${sheet.stickers.length} stickers out. Seed ${seed}.`);
+}
+async function reroll(st){
+  const idx=sheet.stickers.indexOf(st);if(idx<0)return;
+  setStatus('rerolling…');await tick();
+  unplace(st);sheet.stickers.splice(idx,1);
+  rng=mulberry32(Date.now()&0xffffffff);
+  for(let t=0;t<6;t++){
+    const n=makeSticker(st.longIn*rand(0.9,1.05),sheet.styleKeys,sheet.pal);
+    if(n&&place(n,[st.gx,st.gy])){sheet.stickers.splice(idx,0,n);render();setStatus(`rerolled one, ${n.style}.`);return}
+  }
+  commit(st,[st.gx,st.gy]);sheet.stickers.splice(idx,0,st);render();setStatus('no room for a new one there, kept the old one.');
+}
+
+// ---------- drawing ----------
+function drawSheet(g,{bg=true,shadow=false,cuts=false}={}){
+  const {W,H}=sheet;g.clearRect(0,0,W,H);
+  if(bg){g.fillStyle='#fff';g.fillRect(0,0,W,H)}
+  for(const st of sheet.stickers){
+    const x=st.gx*CELL,y=st.gy*CELL;
+    if(shadow){g.save();g.shadowColor='rgba(40,30,20,.28)';g.shadowBlur=14;g.shadowOffsetY=4;g.drawImage(st.canvas,x,y);g.restore()}
+    else g.drawImage(st.canvas,x,y);
+    if(cuts)g.drawImage(st.cut,x,y);
+  }
+}
+function render(){
+  const c=$('#sheet');c.width=sheet.W;c.height=sheet.H;c.hidden=false;$('#empty').hidden=true;
+  const g=c.getContext('2d');drawSheet(g,{shadow:$('#shadow').checked,cuts:$('#cutlines').checked});
+  if(sheet.stickers.length)['#dlSheet','#dlCut'].forEach(s=>$(s).disabled=false);
+}
+function download(name,opts){
+  const c=cv(sheet.W,sheet.H);drawSheet(c.getContext('2d'),opts);
+  c.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000)},'image/png');
+}
+
+// ---------- ui ----------
+const tick=()=>new Promise(r=>setTimeout(r,0));
+function setStatus(s){$('#status').textContent=s}
+
+for(const [k,p] of Object.entries(PALETTES)){const o=document.createElement('option');o.value=k;o.textContent=p.name;$('#palette').append(o)}
+for(const [k,s] of Object.entries(STYLES)){const l=document.createElement('label');l.innerHTML=`<input type="checkbox" id="st-${k}" ${s.on?'checked':''}> ${s.label}`;$('#styles').append(l)}
+
+async function loadFiles(files){
+  const list=[...files].filter(f=>f.type.startsWith('image/'));
+  for(let i=0;i<list.length;i++){
+    setStatus(`reading page ${i+1} of ${list.length}…`);await tick();
+    try{const img=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=URL.createObjectURL(list[i])});
+      pages.push(analyze(img,list[i].name));}
+    catch(e){console.warn('skip',list[i].name,e)}
+  }
+  const small=pages.filter(p=>Math.max(p.w,p.h)<1500).length;
+  $('#regen').disabled=!pages.length;
+  await generate();
+  if(small)setStatus($('#status').textContent+` ${small} scans are under 1500px, so photo styles will look soft. Ink styles hide it.`);
+}
+$('#drop').onclick=()=>$('#file').click();
+$('#file').onchange=e=>loadFiles(e.target.files);
+['dragover','dragenter'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.add('over')}));
+['dragleave','drop'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.remove('over')}));
+$('#drop').addEventListener('drop',e=>loadFiles(e.dataTransfer.files));
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{e.preventDefault();if(e.target.closest('#drop'))return;loadFiles(e.dataTransfer.files)});
+
+$('#regen').onclick=()=>{$('#seed').value=Math.floor(Math.random()*9999);generate()};
+['#palette','#sheetSize','#maxSize','#border','#seed'].forEach(s=>$(s).addEventListener('change',generate));
+$('#styles').addEventListener('change',generate);
+['#cutlines','#shadow'].forEach(s=>$(s).addEventListener('change',()=>sheet&&render()));
+$('#dlSheet').onclick=()=>download(`sticker-sheet-${$('#seed').value}.png`,{bg:true,cuts:false});
+$('#dlCut').onclick=()=>download(`sticker-cut-${$('#seed').value}.png`,{bg:false,cuts:false});
+
+$('#sheet').addEventListener('click',e=>{
+  if(!sheet)return;const r=e.target.getBoundingClientRect();
+  const x=(e.clientX-r.left)/r.width*sheet.W,y=(e.clientY-r.top)/r.height*sheet.H;
+  for(let i=sheet.stickers.length-1;i>=0;i--){const st=sheet.stickers[i],lx=Math.floor(x-st.gx*CELL),ly=Math.floor(y-st.gy*CELL);
+    if(lx>=0&&ly>=0&&lx<st.w&&ly<st.h&&st.mask[ly*st.w+lx]){reroll(st);return}}
+});
+
+// debug: ?debug paints the analysis maps (red desk, blue figure, green text) for checking the classifier
+window.__debugMaps=()=>{
+  const n=Math.min(pages.length,12),cols=4,cw=300,c=cv(cw*cols,Math.ceil(n/cols)*cw*1.8),g=c.getContext('2d');
+  pages.slice(0,n).forEach((p,i)=>{const s=cw/p.aw,ox=(i%cols)*cw,oy=Math.floor(i/cols)*cw*1.8;
+    g.drawImage(p.full,ox,oy,p.aw*s,p.ah*s);const im=g.getImageData(ox,oy,Math.round(p.aw*s),Math.round(p.ah*s));
+    for(let y=0;y<im.height;y++)for(let x=0;x<im.width;x++){const j=Math.min(p.ah-1,Math.floor(y/s))*p.aw+Math.min(p.aw-1,Math.floor(x/s)),o=(y*im.width+x)*4;
+      const col=p.maps.desk[j]?[255,0,0]:p.maps.fig[j]?[0,80,255]:p.maps.text[j]?[0,170,0]:null;
+      if(col)for(let c2=0;c2<3;c2++)im.data[o+c2]=im.data[o+c2]*0.55+col[c2]*0.45;}
+    g.putImageData(im,ox,oy);});
+  return c.toDataURL('image/jpeg',0.8);
+};
+</script>
+</body>
+</html>
